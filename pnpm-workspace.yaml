@@ -1,2 +1,5 @@
 packages:
   - packages/*
+# Host packages are supplied by Pi at runtime; installing peer copies would
+# create duplicate instances and bypass Pi's extension module mapping.
+autoInstallPeers: false

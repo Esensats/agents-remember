@@ -1,0 +1,35 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: false
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .: {}
+
+  packages/core: {}
+
+  packages/dsh:
+    dependencies:
+      '@seangle/remember-core':
+        specifier: file:../core
+        version: link:../core
+      '@seangle/remember-migrators':
+        specifier: file:../migrators
+        version: link:../migrators
+
+  packages/migrators:
+    dependencies:
+      '@seangle/remember-core':
+        specifier: file:../core
+        version: link:../core
+
+  packages/pi:
+    dependencies:
+      '@seangle/remember-core':
+        specifier: file:../core
+        version: link:../core
+      '@seangle/remember-migrators':
+        specifier: file:../migrators
+        version: link:../migrators
