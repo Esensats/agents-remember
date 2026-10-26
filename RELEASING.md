@@ -38,6 +38,13 @@ npm publish ./artifacts/seangle-remember-migrators-0.1.0.tgz --access public
 npm publish ./artifacts/seangle-pi-remember-0.3.0.tgz --access public
 ```
 
+An accepted upload can remain in registry processing for several minutes. A new
+package may temporarily expose only a `0.0.0-stage` placeholder; upload success
+alone does not mean the requested version is installable. Poll the exact version
+with bounded retries. If it stays unavailable, inspect staged releases with
+`npm stage list` (npm >=11.15) before retrying or assuming approval is needed.
+Do not blindly republish the same immutable version.
+
 Wait for each dependency to resolve from the public registry before publishing
 the next package. Verify versions, dependency ranges, tarball integrity, and the
 `latest` tags with `npm view`. Test a fresh registry-based install without
