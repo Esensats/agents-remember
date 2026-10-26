@@ -1,0 +1,5 @@
+# Mounts the memory plugin into whichever profile selects this bundle.
+# The store lives at <workspace>/.agents/memory by default.
+- insert:
+    - id: remember
+      name: '@seangle/dsh-remember'

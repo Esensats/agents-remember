@@ -1,0 +1,31 @@
+{
+  "name": "@seangle/dsh-remember",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Portable plain-file memory for the DeepSeek Harness: facts, notes, stable memo IDs, lexical search, and a session snapshot.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": "./dist/index.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "dist",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "dependencies": {
+    "@seangle/remember-core": "file:../core",
+    "@seangle/remember-migrators": "file:../migrators"
+  },
+  "engines": {
+    "node": ">=22.15.0"
+  }
+}

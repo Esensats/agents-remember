@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Remember",
+    "description": "Plain-file memory for the agent: facts, notes, lexical search, and a per-session snapshot from <workspace>/.agents/memory."
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "name": "remember",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Portable plain-file memory: a host-agnostic engine with per-harness adapters.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node --test packages/core/test/ packages/migrators/test/",
+    "smoke": "node scripts/smoke.mjs",
+    "check": "node scripts/build.mjs && node --test packages/core/test/ packages/migrators/test/"
+  },
+  "engines": {
+    "node": ">=22.15.0"
+  }
+}

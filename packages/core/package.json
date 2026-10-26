@@ -1,0 +1,20 @@
+{
+  "name": "@seangle/remember-core",
+  "version": "0.1.0",
+  "description": "Host-agnostic plain-file memory engine: facts, notes, stable memo IDs, search, snapshots, recovery, and migration.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=22.15.0"
+  },
+  "scripts": {
+    "build": "node ../../scripts/build.mjs",
+    "test": "node --test test/"
+  }
+}
