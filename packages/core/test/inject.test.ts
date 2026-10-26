@@ -31,3 +31,20 @@ test("buildSnapshot includes both scopes and stable bytes", () => {
   assert.match(a.text, /## Project memory \(proj\)/);
   assert.match(a.text, /#fact Local line/);
 });
+
+test("buildSnapshot wrap:false keeps the body without the outer tag", () => {
+  const opts = { maxGlobalChars: 3000, maxLocalChars: 3000 };
+  const wrapped = buildSnapshot("#fact Global line", "#fact Local line", "proj", opts);
+  const bare = buildSnapshot("#fact Global line", "#fact Local line", "proj", { ...opts, wrap: false });
+  assert.equal(bare.text, wrapped.text.replace(/^<remember>\n\n/, "").replace(/\n\n<\/remember>$/, ""));
+  assert.doesNotMatch(bare.text, /<\/?remember>/);
+  assert.match(bare.text, /## Project memory \(proj\)/);
+});
+
+test("buildSnapshot wrap:false still reports character counts", () => {
+  const bare = buildSnapshot("global facts", "local facts", "proj", {
+    maxGlobalChars: 3000, maxLocalChars: 3000, wrap: false,
+  });
+  assert.equal(bare.globalChars, "global facts".length);
+  assert.equal(bare.localChars, "local facts".length);
+});

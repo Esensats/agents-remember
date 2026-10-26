@@ -5,6 +5,12 @@ export interface InjectOptions {
   tag?: string;
   /** Override the one-paragraph explanation that precedes the scopes. */
   intro?: string;
+  /**
+   * Omit the outer `<tag>` lines. Hosts that wrap the block themselves (Pi's
+   * named system-prompt sections) would otherwise nest two tags around it.
+   * Everything inside the wrapper is byte-identical either way.
+   */
+  wrap?: boolean;
 }
 
 const DEFAULT_TAG = "remember";
@@ -45,12 +51,10 @@ export function buildSnapshot(
   const l = middleTruncate(localText, opts.maxLocalChars).trim();
   if (!g && !l) return { text: "", globalChars: 0, localChars: 0 };
   const tag = opts.tag ?? DEFAULT_TAG;
-  const parts: string[] = [
-    `<${tag}>`,
-    opts.intro ?? DEFAULT_INTRO,
-  ];
+  const parts: string[] = [opts.intro ?? DEFAULT_INTRO];
   if (g) parts.push("## Global memory", g);
   if (l) parts.push(`## Project memory (${projectName})`, l);
-  parts.push(`</${tag}>`);
-  return { text: parts.join("\n\n"), globalChars: g.length, localChars: l.length };
+  const body = parts.join("\n\n");
+  const text = opts.wrap === false ? body : `<${tag}>\n\n${body}\n\n</${tag}>`;
+  return { text, globalChars: g.length, localChars: l.length };
 }
