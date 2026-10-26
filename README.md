@@ -14,11 +14,13 @@ The difference is packaging: the engine no longer knows which agent is calling.
 packages/core/       @seangle/remember-core       engine, no host SDK imports
 packages/migrators/  @seangle/remember-migrators  migration strategies, also host-free
 packages/dsh/        @seangle/dsh-remember        DeepSeek Harness bundle
+packages/pi/         @seangle/pi-remember         Pi extension
 ```
 
-Planned: `packages/pi` or an equivalent adapter in the Pi repository, consuming
-the published core. Keeping Pi's adapter in its own repository preserves that
-package's release history; the core is the shared dependency either way.
+Both adapters are thin shells over the same engine, and both default to
+`<workspace>/.agents/memory`, so a workspace's memory is shared between the
+harnesses. The global store stays harness-owned: DSH uses `$DSH_HOME/memory`,
+Pi uses `~/.pi/agent/memory`.
 
 ### Core
 
@@ -44,9 +46,13 @@ directories it is handed.
   recovery/<8hex>.json              # undo records for updates and deletions
 ```
 
-`dirName` is configurable; `.agents` is the DSH default. A store with content but
-no `remember.json` is never adopted silently: core reports it as needing an
-explicit migration.
+`dirName` is configurable; both adapters default to `.agents`, so the workspace
+store is shared. A store with content but no `remember.json` is never adopted
+silently: core reports it as needing an explicit migration.
+
+Two harnesses writing one store concurrently is serialized per process, not
+across processes. The append path is atomic per write, but a race can still lose
+one fact; avoid writing memory from both harnesses at the same moment.
 
 Timestamps are UTC ISO 8601 truncated to the minute (`2026-10-23T03:09Z`).
 Stores written earlier may contain seconds or fractional seconds; those values
@@ -94,13 +100,13 @@ target is refused, never merged. When source and target are the same directory
 | `root` per call for another workspace | yes |
 | Byte-stable snapshot, 20/80 middle truncation, budgets | yes |
 | Legacy store migration (`memory_migrate`, `/memory migrate`) | yes, via `packages/migrators` |
-| `/memory` slash command | `status` and `migrate` |
+| `/memory` slash command | `status` and `migrate` in both; Pi also has `update` |
 | Exit summary | **never implemented** (excluded by request) |
 | Old recovery records and migration artifacts | not migrated, not a compatibility goal |
 
-Model-facing behavior is at parity; what differs is only the host seam. Pi's
-`/memory` command is a Pi UI affordance, and the exit summary is deliberately
-absent rather than ported.
+Model-facing behavior is at parity; what differs is only the host seam. The
+`/memory` command is a harness UI affordance, and the exit summary is
+deliberately absent rather than ported.
 
 ## Build
 
@@ -111,11 +117,30 @@ to strip types.
 
 ```sh
 npm run build     # or: node scripts/build.mjs
-npm test          # 191 tests: core + migrators
+npm test          # 205 tests: core + migrators + Pi adapter
+npm run check     # build, then the same tests
 ```
 
 Output lands in each package's `dist/`. `dist/` is gitignored; build before
-installing the bundle.
+installing either adapter.
+
+The Pi adapter's tests map `@seangle/remember-core` and
+`@seangle/remember-migrators` to their sources and stub the host packages, so
+`npm test` works without a build or a Pi installation. `npm run check` verifies
+the emitted `dist/` as well.
+
+### Local development
+
+`pnpm install` creates the workspace links (`packages/*/node_modules/@seangle`)
+from the `file:` dependencies; nothing external is downloaded. The DSH smoke
+script additionally needs the host packages resolvable:
+
+```sh
+mkdir -p node_modules/@seangle
+ln -s <dsh-install>/node_modules/@deepseek-ai node_modules/@deepseek-ai
+ln -s ../../packages/core node_modules/@seangle/remember-core
+npm run build && npm run smoke
+```
 
 ## DSH adapter
 
@@ -165,24 +190,47 @@ Injected memory is framed as background knowledge, never instructions: memory is
 agent-writable, so treating it as authority would turn it into a prompt-injection
 channel.
 
+## Pi adapter
+
+`@seangle/pi-remember` is a Pi extension built from the same core:
+
+- **Injection** — `before_agent_start` rebuilds the snapshot and assigns it to
+  the named system-prompt section `remember`. Pi wraps that section in
+  `<remember>…</remember>` and patches the transcript only when its bytes change,
+  so the snapshot is stable between runs and refreshes exactly once after a write.
+- **Tools** — the same ten tools, with Pi's `withFileMutationQueue` serializing
+  mutations and `truncateTail` bounding output.
+- **Migration** — the first run of a session in a workspace with a legacy
+  `.pi/memory` store carries the same `<remember-migration>` notice; `/memory
+  migrate` performs it directly.
+- **Command** — `/memory [status|migrate|update]`; `update` sends the incremental
+  review prompt as a follow-up turn.
+- **Config** — `REMEMBER_DIR_NAME` (`.agents`), `REMEMBER_GLOBAL_DIR`
+  (`~/.pi/agent/memory`), `REMEMBER_INJECT_CHARS_GLOBAL`, `REMEMBER_INJECT_CHARS_LOCAL`,
+  `REMEMBER_AUTO_INJECT` (`1` by default).
+
+```sh
+pnpm install
+node scripts/build.mjs
+pi install /absolute/path/to/repo/packages/pi
+```
+
+Local packages are loaded from their path without copying, so `dist/` must exist
+and the path is recorded in `~/.pi/agent/settings.json`. Rebuild and run `/reload`
+after changing the adapter. Remove a previously installed `npm:@seangle/pi-remember`
+first: two extensions registering the same `memory_*` tools collide.
+
 ## Status
 
-- 191 tests pass (185 core, 6 migrators).
-- Adapter smoke suite passes end to end against a fake host: all ten tools,
-  duplicate handling, update → forget → restore round-trip, workspace isolation,
-  step-1 injection, digest deduplication, no mid-turn refresh, mid-turn restore
-  after a surface-replacing compaction.
-- The smoke script needs the host's packages resolvable. For local development:
-
-  ```sh
-  mkdir -p node_modules/@seangle
-  ln -s <dsh-install>/node_modules/@deepseek-ai node_modules/@deepseek-ai
-  ln -s ../../packages/core node_modules/@seangle/remember-core
-  npm run build && npm run smoke
-  ```
-
-- Not yet verified inside a live DSH profile; installation and UI checks are the
-  next step. `dist/` must be built before installing the bundle.
+- 205 tests pass (187 core, 6 migrators, 12 Pi adapter).
+- Adapter suites pass end to end against fake hosts: all ten tools, duplicate
+  handling, update → forget → restore round-trip, workspace/root isolation,
+  snapshot injection and stability, legacy detection, dry-run migration,
+  in-place marker adoption, and the `/memory` command.
+- The DSH adapter is not yet verified inside a live DSH profile; installation and
+  UI checks are the next step. The Pi adapter is a real Pi extension and can be
+  exercised with `pi -e /absolute/path/to/repo/packages/pi`.
+- `dist/` must be built before installing either adapter.
 
 ## License
 

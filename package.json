@@ -10,9 +10,9 @@
   ],
   "scripts": {
     "build": "node scripts/build.mjs",
-    "test": "node --test packages/core/test/ packages/migrators/test/",
+    "test": "node --test packages/core/test/*.test.ts packages/migrators/test/*.test.ts packages/pi/test/*.test.ts",
     "smoke": "node scripts/smoke.mjs",
-    "check": "node scripts/build.mjs && node --test packages/core/test/ packages/migrators/test/"
+    "check": "node scripts/build.mjs && node --test packages/core/test/*.test.ts packages/migrators/test/*.test.ts packages/pi/test/*.test.ts"
   },
   "engines": {
     "node": ">=22.15.0"
