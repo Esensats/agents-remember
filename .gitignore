@@ -2,3 +2,5 @@ node_modules/
 dist/
 .smoke.mjs
 *.log
+artifacts/
+packages/*/LICENSE

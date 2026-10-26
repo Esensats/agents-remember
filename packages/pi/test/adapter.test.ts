@@ -5,10 +5,11 @@ import { registerHooks } from "node:module";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { after, describe, test, type TestContext } from "node:test";
+import { pathToFileURL } from "node:url";
 
 // Host packages are substituted; the adapter, core, migrators and snapshot
 // builder all run unchanged against real temporary files. Core and migrators
-// are mapped to their sources so tests do not require a build first.
+// are mapped to their sources unless testing an isolated tarball installation.
 const hostSource = `
   export const queueCalls = [];
   const tails = new Map();
@@ -45,12 +46,16 @@ const stubSources = new Map([
 const stubUrls = new Map([...stubSources].map(([name, source]) => [
   name, `data:text/javascript,${encodeURIComponent(source)}`,
 ]));
+const packageRoot = process.env.REMEMBER_TEST_PACKAGE_ROOT;
+const adapterBase = packageRoot
+  ? pathToFileURL(join(packageRoot, "node_modules/@seangle/pi-remember/dist/"))
+  : new URL("../src/", import.meta.url);
 const coreSource = new URL("../../core/src/index.ts", import.meta.url).href;
 const migratorsSource = new URL("../../migrators/src/index.ts", import.meta.url).href;
 const hooks = registerHooks({
   resolve(specifier, context, nextResolve) {
-    if (specifier === "@seangle/remember-core") return { url: coreSource, shortCircuit: true };
-    if (specifier === "@seangle/remember-migrators") return { url: migratorsSource, shortCircuit: true };
+    if (!packageRoot && specifier === "@seangle/remember-core") return { url: coreSource, shortCircuit: true };
+    if (!packageRoot && specifier === "@seangle/remember-migrators") return { url: migratorsSource, shortCircuit: true };
     const url = stubUrls.get(specifier);
     return url ? { url, shortCircuit: true } : nextResolve(specifier, context);
   },
@@ -202,7 +207,7 @@ async function fixture(t: TestContext, options: {
     Object.assign(process.env, environment);
     // Each fixture gets fresh module-level config and session state. The factory
     // reads the environment, so it must run while the fixture env is in place.
-    const extension = (await import(new URL(`../src/index.ts?fixture=${++fixtureNumber}`, import.meta.url).href)).default;
+    const extension = (await import(new URL(`index.${packageRoot ? "js" : "ts"}?fixture=${++fixtureNumber}`, adapterBase).href)).default;
     extension(fake);
   } finally {
     for (const [key, value] of Object.entries(previous)) {
@@ -258,7 +263,7 @@ describe("adapter registration", () => {
   });
 
   test("config defaults and environment overrides", async () => {
-    const { loadConfig } = await import(new URL("../src/context.ts", import.meta.url).href);
+    const { loadConfig } = await import(new URL(`context.${packageRoot ? "js" : "ts"}`, adapterBase).href);
     const defaults = loadConfig({});
     assert.equal(defaults.dirName, ".agents");
     assert.ok(defaults.globalDir.endsWith(join(".pi", "agent", "memory")));

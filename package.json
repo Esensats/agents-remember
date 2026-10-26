@@ -1,5 +1,5 @@
 {
-  "name": "remember",
+  "name": "agents-remember",
   "private": true,
   "version": "0.1.0",
   "description": "Portable plain-file memory: a host-agnostic engine with per-harness adapters.",
@@ -12,6 +12,8 @@
     "build": "node scripts/build.mjs",
     "test": "node --test packages/core/test/*.test.ts packages/migrators/test/*.test.ts packages/pi/test/*.test.ts",
     "smoke": "node scripts/smoke.mjs",
+    "pack": "node scripts/pack.mjs",
+    "test:packed": "node scripts/test-packed.mjs",
     "check": "node scripts/build.mjs && node --test packages/core/test/*.test.ts packages/migrators/test/*.test.ts packages/pi/test/*.test.ts"
   },
   "engines": {

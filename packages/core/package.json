@@ -3,17 +3,35 @@
   "version": "0.1.0",
   "description": "Host-agnostic plain-file memory engine: facts, notes, stable memo IDs, search, snapshots, recovery, and migration.",
   "license": "Apache-2.0",
+  "author": "Esensats",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Esensats/agents-remember.git",
+    "directory": "packages/core"
+  },
+  "homepage": "https://github.com/Esensats/agents-remember/tree/main/packages/core#readme",
+  "bugs": {
+    "url": "https://github.com/Esensats/agents-remember/issues"
+  },
+  "keywords": ["memory", "coding-agents", "plain-file", "persistent-memory"],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "type": "module",
   "exports": {
     ".": "./dist/index.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "LICENSE"
   ],
   "engines": {
     "node": ">=22.15.0"
   },
   "scripts": {
+    "prepack": "node ../../scripts/build.mjs",
     "build": "node ../../scripts/build.mjs",
     "test": "node --test test/"
   }

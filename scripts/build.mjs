@@ -48,6 +48,8 @@ async function buildPackage(name) {
     await mkdir(dirname(target), { recursive: true });
     await writeFile(target, code);
   }
+  // Keep one authoritative license, but include it in every npm tarball.
+  await cp(join(root, "LICENSE"), join(packagesDir, name, "LICENSE"));
   console.log(`built ${name}: ${files.length} file(s)`);
 }
 

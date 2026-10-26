@@ -13,23 +13,23 @@ importers:
   packages/dsh:
     dependencies:
       '@seangle/remember-core':
-        specifier: file:../core
+        specifier: ^0.1.0
         version: link:../core
       '@seangle/remember-migrators':
-        specifier: file:../migrators
+        specifier: ^0.1.0
         version: link:../migrators
 
   packages/migrators:
     dependencies:
       '@seangle/remember-core':
-        specifier: file:../core
+        specifier: ^0.1.0
         version: link:../core
 
   packages/pi:
     dependencies:
       '@seangle/remember-core':
-        specifier: file:../core
+        specifier: ^0.1.0
         version: link:../core
       '@seangle/remember-migrators':
-        specifier: file:../migrators
+        specifier: ^0.1.0
         version: link:../migrators

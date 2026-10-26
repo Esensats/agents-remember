@@ -1,9 +1,23 @@
 {
   "name": "@seangle/pi-remember",
-  "version": "0.1.0",
-  "private": true,
+  "version": "0.3.0",
   "description": "Portable plain-file memory for the Pi coding agent: facts, notes, stable memo IDs, lexical search, and a session snapshot.",
   "license": "Apache-2.0",
+  "author": "Esensats",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Esensats/agents-remember.git",
+    "directory": "packages/pi"
+  },
+  "homepage": "https://github.com/Esensats/agents-remember/tree/main/packages/pi#readme",
+  "bugs": {
+    "url": "https://github.com/Esensats/agents-remember/issues"
+  },
+  "keywords": ["pi-package", "pi-extension", "memory", "persistent-memory"],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "type": "module",
   "pi": {
     "extensions": [
@@ -12,11 +26,13 @@
   },
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
   ],
   "dependencies": {
-    "@seangle/remember-core": "file:../core",
-    "@seangle/remember-migrators": "file:../migrators"
+    "@seangle/remember-core": "^0.1.0",
+    "@seangle/remember-migrators": "^0.1.0"
   },
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",
@@ -27,6 +43,7 @@
     "node": ">=22.15.0"
   },
   "scripts": {
+    "prepack": "node ../../scripts/build.mjs",
     "build": "node ../../scripts/build.mjs",
     "test": "node --test test/*.test.ts"
   }

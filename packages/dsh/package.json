@@ -22,8 +22,8 @@
     }
   },
   "dependencies": {
-    "@seangle/remember-core": "file:../core",
-    "@seangle/remember-migrators": "file:../migrators"
+    "@seangle/remember-core": "^0.1.0",
+    "@seangle/remember-migrators": "^0.1.0"
   },
   "engines": {
     "node": ">=22.15.0"

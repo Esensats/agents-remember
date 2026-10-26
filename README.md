@@ -1,4 +1,4 @@
-# remember
+# agents-remember
 
 Portable plain-file memory for coding agents: facts, notes, stable memo IDs,
 lexical search, and a byte-stable session snapshot — with a host-agnostic core
@@ -7,6 +7,25 @@ and one adapter per harness.
 The design is lifted from [`pi-remember`](https://github.com/Esensats/pi-remember):
 curated knowledge that was expensive to obtain, not transcripts and not todos.
 The difference is packaging: the engine no longer knows which agent is calling.
+The Pi adapter continues the existing npm name `@seangle/pi-remember`, starting
+with the breaking 0.3.0 release. The legacy repository is historical; active
+development lives here.
+
+## Install for Pi
+
+```sh
+pi install npm:@seangle/pi-remember
+```
+
+Already installed? Use `pi update npm:@seangle/pi-remember` (pinned versions stay
+pinned). Restart or `/reload` afterward. **Upgrading from 0.2.x requires explicit
+store migration**; see the [Pi adapter guide](packages/pi/README.md#upgrading-from-02x),
+including the global in-place migration and renamed configuration variables.
+Do not load a local/manual copy alongside the npm package.
+
+The core and migrators are also published independently. The DSH adapter remains
+private and is installed locally for now. See [RELEASING.md](RELEASING.md) for
+artifact validation and publishing.
 
 ## Layout
 
@@ -118,7 +137,9 @@ to strip types.
 ```sh
 npm run build     # or: node scripts/build.mjs
 npm test          # 205 tests: core + migrators + Pi adapter
-npm run check     # build, then the same tests
+npm run check       # build, then the same tests
+npm run test:packed # isolated tarball install + compiled Pi integration tests
+npm run pack        # validated release tarballs in artifacts/
 ```
 
 Output lands in each package's `dist/`. `dist/` is gitignored; build before
@@ -126,13 +147,15 @@ installing either adapter.
 
 The Pi adapter's tests map `@seangle/remember-core` and
 `@seangle/remember-migrators` to their sources and stub the host packages, so
-`npm test` works without a build or a Pi installation. `npm run check` verifies
-the emitted `dist/` as well.
+`npm test` works without a build or a Pi installation. `npm run check` runs the
+build and source tests; `npm run test:packed` additionally verifies the emitted
+JavaScript and dependency resolution outside the monorepo.
 
 ### Local development
 
-`pnpm install` creates the workspace links (`packages/*/node_modules/@seangle`)
-from the `file:` dependencies; nothing external is downloaded. The DSH smoke
+`pnpm install` creates workspace links (`packages/*/node_modules/@seangle`).
+Package manifests use registry-compatible version ranges, linked locally
+by `linkWorkspacePackages: true`. No external runtime dependencies are needed. The DSH smoke
 script additionally needs the host packages resolvable:
 
 ```sh
@@ -171,9 +194,9 @@ npm run build && npm run smoke
 
 Install from the Plugins page by pointing at `packages/dsh`, or with the
 `plugin_manager` tool's `install_bundle` action targeting that absolute
-directory. The bundle declares `@seangle/remember-core` and
-`@seangle/remember-migrators` as `file:` dependencies, so all three packages must
-stay side by side.
+directory after running `pnpm install` and the build at the repository root.
+Core and migrators resolve through workspace links during development, or their
+published npm versions when the host installs dependencies itself.
 
 ### Model experience
 
@@ -227,10 +250,11 @@ first: two extensions registering the same `memory_*` tools collide.
   handling, update → forget → restore round-trip, workspace/root isolation,
   snapshot injection and stability, legacy detection, dry-run migration,
   in-place marker adoption, and the `/memory` command.
-- The DSH adapter is not yet verified inside a live DSH profile; installation and
-  UI checks are the next step. The Pi adapter is a real Pi extension and can be
-  exercised with `pi -e /absolute/path/to/repo/packages/pi`.
-- `dist/` must be built before installing either adapter.
+- The DSH adapter remains private pending its release validation.
+- The Pi adapter has been exercised in a live Pi session. Its integration suite
+  also runs against an isolated installation of the published-format tarballs.
+- `dist/` must be built before installing either adapter from a local path;
+  npm releases already include the compiled JavaScript.
 
 ## License
 
