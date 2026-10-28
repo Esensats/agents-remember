@@ -1,0 +1,50 @@
+{
+  "name": "@seangle/opencode-remember",
+  "version": "0.1.0",
+  "description": "Portable plain-file memory for OpenCode: facts, notes, stable memo IDs, lexical search, and a per-request session snapshot.",
+  "license": "Apache-2.0",
+  "author": "Esensats",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Esensats/agents-remember.git",
+    "directory": "packages/opencode"
+  },
+  "homepage": "https://github.com/Esensats/agents-remember/tree/main/packages/opencode#readme",
+  "bugs": {
+    "url": "https://github.com/Esensats/agents-remember/issues"
+  },
+  "keywords": ["opencode-plugin", "memory", "persistent-memory"],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "type": "module",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "dependencies": {
+    "@seangle/remember-core": "^0.1.0",
+    "@seangle/remember-migrators": "^0.1.0"
+  },
+  "peerDependencies": {
+    "@opencode/plugin": ">=2.2.0"
+  },
+  "peerDependenciesMeta": {
+    "@opencode/plugin": {
+      "optional": true
+    }
+  },
+  "engines": {
+    "node": ">=22.15.0"
+  },
+  "scripts": {
+    "prepack": "node ../../scripts/build.mjs",
+    "build": "node ../../scripts/build.mjs",
+    "test": "node --test test/*.test.ts"
+  }
+}

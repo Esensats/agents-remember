@@ -1,13 +1,15 @@
 # Releasing
 
 The repository is private at the npm workspace root, not on GitHub. Publish the
-public leaf packages only. DSH remains private until its release is ready.
+public leaf packages only.
 
 | Directory | Package | Initial monorepo release |
 |---|---|---|
 | `packages/core` | `@seangle/remember-core` | 0.1.0 |
 | `packages/migrators` | `@seangle/remember-migrators` | 0.1.0 |
 | `packages/pi` | `@seangle/pi-remember` | 0.3.0 |
+| `packages/opencode` | `@seangle/opencode-remember` | 0.1.0 |
+| `packages/dsh` | `@seangle/dsh-remember` | 0.1.0 |
 
 ## Prepare and verify
 
@@ -15,17 +17,19 @@ public leaf packages only. DSH remains private until its release is ready.
 2. Run `pnpm install --offline` to refresh workspace links and the lockfile.
    Registry-compatible dependency ranges resolve locally via
    `linkWorkspacePackages: true`; published manifests contain no `file:` links.
-3. Run `npm run check` and `npm run test:packed`.
+3. Run `npm run check`, `npm run smoke` (DSH; needs the host packages), and
+   `npm run test:packed`.
 4. Inspect `git diff`, commit, and push the release source to GitHub before
    publishing immutable npm artifacts.
 
 `npm run pack` builds JavaScript and copies the root license into each package,
 then creates and validates tarballs under the gitignored `artifacts/` directory.
 Each public package also has a `prepack` hook so direct packing builds first.
-`test:packed` installs the three tarballs offline in a fresh directory outside
+`test:packed` installs the five tarballs offline in a fresh directory outside
 the workspace, suppresses automatic host-peer installation, and exercises all
-ten tools, migrations, recovery, commands, and prompt injection. It retains that
-temporary installation for inspection.
+ten tools, migrations, recovery, commands, and prompt injection in all three
+adapter suites, plus the DSH smoke when host packages are available. It retains
+that temporary installation for inspection.
 
 ## Publish
 
@@ -36,6 +40,8 @@ tarballs**, not repacked directories, in dependency order:
 npm publish ./artifacts/seangle-remember-core-0.1.0.tgz --access public
 npm publish ./artifacts/seangle-remember-migrators-0.1.0.tgz --access public
 npm publish ./artifacts/seangle-pi-remember-0.3.0.tgz --access public
+npm publish ./artifacts/seangle-opencode-remember-0.1.0.tgz --access public
+npm publish ./artifacts/seangle-dsh-remember-0.1.0.tgz --access public
 ```
 
 An accepted upload can remain in registry processing for several minutes. A new

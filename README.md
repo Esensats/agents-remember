@@ -23,9 +23,43 @@ store migration**; see the [Pi adapter guide](packages/pi/README.md#upgrading-fr
 including the global in-place migration and renamed configuration variables.
 Do not load a local/manual copy alongside the npm package.
 
-The core and migrators are also published independently. The DSH adapter remains
-private and is installed locally for now. See [RELEASING.md](RELEASING.md) for
-artifact validation and publishing.
+The core, migrators, and all three adapters are published independently. See
+[RELEASING.md](RELEASING.md) for artifact validation and publishing.
+
+## Install for OpenCode
+
+Add the plugin to `opencode.json(c)` (global or project) and run `/reload`:
+
+```jsonc
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugins": [
+    {
+      "package": "@seangle/opencode-remember",
+      "options": { "dirName": ".agents" },
+    },
+  ],
+}
+```
+
+See the [OpenCode adapter guide](packages/opencode/README.md) for store paths,
+tool behaviour, and configuration.
+
+## Install for DSH
+
+The bundle is published as `@seangle/dsh-remember`. Point the Plugins page at the
+package directory, or use the `plugin_manager` tool's `install_bundle` action;
+whether that DSH build can install by npm name directly depends on the host.
+
+```yaml
+- id: remember
+  name: '@seangle/dsh-remember'
+  config:
+    dirName: .agents
+```
+
+See the [DSH adapter guide](packages/dsh/README.md) for compatibility,
+configuration, and the snapshot lifecycle.
 
 ## Layout
 
@@ -34,12 +68,13 @@ packages/core/       @seangle/remember-core       engine, no host SDK imports
 packages/migrators/  @seangle/remember-migrators  migration strategies, also host-free
 packages/dsh/        @seangle/dsh-remember        DeepSeek Harness bundle
 packages/pi/         @seangle/pi-remember         Pi extension
+packages/opencode/   @seangle/opencode-remember   OpenCode server plugin
 ```
 
-Both adapters are thin shells over the same engine, and both default to
+Every adapter is a thin shell over the same engine, and all default to
 `<workspace>/.agents/memory`, so a workspace's memory is shared between the
 harnesses. The global store stays harness-owned: DSH uses `$DSH_HOME/memory`,
-Pi uses `~/.pi/agent/memory`.
+Pi uses `~/.pi/agent/memory`, OpenCode uses `$XDG_DATA_HOME/opencode/memory`.
 
 ### Core
 
@@ -136,9 +171,9 @@ to strip types.
 
 ```sh
 npm run build     # or: node scripts/build.mjs
-npm test          # 205 tests: core + migrators + Pi adapter
+npm test          # 220 tests: core + migrators + Pi and OpenCode adapters
 npm run check       # build, then the same tests
-npm run test:packed # isolated tarball install + compiled Pi integration tests
+npm run test:packed # isolated tarball install + compiled adapter integration tests
 npm run pack        # validated release tarballs in artifacts/
 ```
 
@@ -194,9 +229,11 @@ npm run build && npm run smoke
 
 Install from the Plugins page by pointing at `packages/dsh`, or with the
 `plugin_manager` tool's `install_bundle` action targeting that absolute
-directory after running `pnpm install` and the build at the repository root.
-Core and migrators resolve through workspace links during development, or their
-published npm versions when the host installs dependencies itself.
+directory after running `pnpm install` and the build at the repository root. The
+package is also published as `@seangle/dsh-remember`; use it when that DSH build
+can install a bundle from npm. Core and migrators resolve through workspace links
+during development, or their published npm versions when the host installs
+dependencies itself.
 
 ### Model experience
 
@@ -243,17 +280,47 @@ and the path is recorded in `~/.pi/agent/settings.json`. Rebuild and run `/reloa
 after changing the adapter. Remove a previously installed `npm:@seangle/pi-remember`
 first: two extensions registering the same `memory_*` tools collide.
 
+## OpenCode adapter
+
+`@seangle/opencode-remember` is an OpenCode V2 server plugin built from the same
+core. It imports no host SDK at runtime and registers a plain `{ id, setup }`
+object; `@opencode/plugin` supplies types only.
+
+- **Injection** — a `session.hook("context")` appends the snapshot to the system
+  prompt for every model call. OpenCode rebuilds that prompt per request and does
+  not persist it, so the block is never duplicated, a write is visible on the next
+  step, and compaction cannot remove it. Bytes stay identical while the store is
+  unchanged, keeping prefix caches warm.
+- **Workspace** — the session's `location.directory`, not the plugin's load
+  location, so `session_move` and worktrees resolve to their own local store.
+- **Tools** — the same ten tools, with a per-`MEMORY.md` promise queue and bounded
+  output; recoverable failures return text instead of throwing across the boundary.
+- **Migration** — the same `<remember-migration>` notice once per session when a
+  legacy `.pi/memory` store exists; `/memory migrate` performs it directly.
+- **Command** — `/memory [status|migrate]`, answered with a synthetic message so
+  no model turn starts.
+- **Config** — plugin options in `opencode.json(c)`: `dirName` (`.agents`),
+  `globalDir` (`$XDG_DATA_HOME/opencode/memory`), `injectCharsGlobal`,
+  `injectCharsLocal`, `autoInject`.
+
 ## Status
 
-- 205 tests pass (187 core, 6 migrators, 12 Pi adapter).
+- 220 tests pass (187 core, 6 migrators, 12 Pi adapter, 15 OpenCode adapter).
 - Adapter suites pass end to end against fake hosts: all ten tools, duplicate
   handling, update → forget → restore round-trip, workspace/root isolation,
   snapshot injection and stability, legacy detection, dry-run migration,
   in-place marker adoption, and the `/memory` command.
-- The DSH adapter remains private pending its release validation.
+- The DSH adapter has been exercised with `npm run smoke` against DSH desktop
+  0.2.1-rc.3; its tarball ships the bundle patch, locale files, and icon, with
+  host packages declared as peers.
 - The Pi adapter has been exercised in a live Pi session. Its integration suite
   also runs against an isolated installation of the published-format tarballs.
-- `dist/` must be built before installing either adapter from a local path;
+- The OpenCode adapter has been exercised in live OpenCode 2.2.0 sessions: the
+  tools wrote a fact, a fresh session recalled it from the injected snapshot
+  without calling a tool, and `/memory status` and `/memory migrate` answered
+  with synthetic messages. Its suite and packed-artifact run cover the host seam
+  without a live harness.
+- `dist/` must be built before installing any adapter from a local path;
   npm releases already include the compiled JavaScript.
 
 ## License

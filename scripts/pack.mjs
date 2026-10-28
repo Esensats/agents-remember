@@ -11,7 +11,7 @@ const artifacts = join(root, "artifacts");
 await mkdir(artifacts, { recursive: true });
 execFileSync(process.execPath, ["scripts/build.mjs"], { cwd: root, stdio: "inherit" });
 
-for (const name of ["core", "migrators", "pi"]) {
+for (const name of ["core", "migrators", "pi", "opencode", "dsh"]) {
   const cwd = join(root, "packages", name);
   const manifest = JSON.parse(await readFile(join(cwd, "package.json"), "utf8"));
   assert.notEqual(manifest.private, true, manifest.name);
@@ -26,8 +26,10 @@ for (const name of ["core", "migrators", "pi"]) {
   for (const required of ["dist/index.js", "README.md", "LICENSE", "package.json"]) {
     assert.ok(paths.includes(required), `${manifest.name}: missing ${required}`);
   }
-  assert.ok(paths.every(path => /^(dist\/.*\.js|README\.md|CHANGELOG\.md|LICENSE|package\.json)$/.test(path)),
-    `${manifest.name}: unexpected tarball files: ${paths.join(", ")}`);
+  assert.ok(paths.every(path =>
+    /^(dist\/.*\.js|README\.md|CHANGELOG\.md|LICENSE|package\.json)$/.test(path) ||
+    (name === "dsh" && /^(cordis\.patch\.yml|locale\/[^/]+\.json|icon\.svg)$/.test(path)),
+  ), `${manifest.name}: unexpected tarball files: ${paths.join(", ")}`);
   const tarball = join(artifacts, packed.filename);
   const shipped = JSON.parse(execFileSync("tar", ["-xOf", tarball, "package/package.json"], { encoding: "utf8" }));
   assert.equal(shipped.name, manifest.name);
@@ -41,6 +43,27 @@ for (const name of ["core", "migrators", "pi"]) {
     assert.ok(paths.includes("CHANGELOG.md"));
     for (const entry of shipped.pi.extensions) assert.ok(paths.includes(entry.replace(/^\.\//, "")));
     for (const host of ["@earendil-works/pi-ai", "@earendil-works/pi-coding-agent", "typebox"]) {
+      assert.ok(shipped.peerDependencies[host], host);
+      assert.equal(shipped.dependencies[host], undefined, host);
+    }
+  }
+  if (name === "opencode") {
+    assert.ok(shipped.keywords.includes("opencode-plugin"));
+    assert.equal(shipped.exports["."], "./dist/index.js");
+    assert.ok(shipped.peerDependencies["@opencode/plugin"]);
+    assert.equal(shipped.dependencies["@opencode/plugin"], undefined);
+  }
+  if (name === "dsh") {
+    assert.ok(shipped.keywords.includes("dsh-plugin"));
+    assert.equal(shipped.private, undefined);
+    assert.equal(shipped.dsh.bundle.patch, "./cordis.patch.yml");
+    for (const file of ["cordis.patch.yml", "locale/en.json", "icon.svg"]) {
+      assert.ok(paths.includes(file), `${manifest.name}: missing ${file}`);
+    }
+    for (const host of [
+      "@deepseek-ai/dsh-commands", "@deepseek-ai/dsh-home-paths", "@deepseek-ai/dsh-llm",
+      "@deepseek-ai/dsh-tools", "@deepseek-ai/schemastery",
+    ]) {
       assert.ok(shipped.peerDependencies[host], host);
       assert.equal(shipped.dependencies[host], undefined, host);
     }

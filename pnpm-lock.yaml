@@ -25,6 +25,15 @@ importers:
         specifier: ^0.1.0
         version: link:../core
 
+  packages/opencode:
+    dependencies:
+      '@seangle/remember-core':
+        specifier: ^0.1.0
+        version: link:../core
+      '@seangle/remember-migrators':
+        specifier: ^0.1.0
+        version: link:../migrators
+
   packages/pi:
     dependencies:
       '@seangle/remember-core':

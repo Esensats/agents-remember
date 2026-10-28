@@ -1,7 +1,14 @@
 import { mkdtemp, mkdir, writeFile, readFile, access, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { apply } from "../packages/dsh/dist/index.js";
+import { pathToFileURL } from "node:url";
+
+// Test the emitted bundle from either the workspace or an isolated tarball install.
+const packageRoot = process.env.REMEMBER_TEST_PACKAGE_ROOT;
+const entry = packageRoot
+  ? pathToFileURL(join(packageRoot, "node_modules/@seangle/dsh-remember/dist/index.js")).href
+  : new URL("../packages/dsh/dist/index.js", import.meta.url).href;
+const { apply } = await import(entry);
 
 let failures = 0;
 const check = (name, cond, detail = "") => {
