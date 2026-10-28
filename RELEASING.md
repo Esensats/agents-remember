@@ -9,7 +9,7 @@ public leaf packages only.
 | `packages/migrators` | `@seangle/remember-migrators` | 0.1.0 |
 | `packages/pi` | `@seangle/pi-remember` | 0.3.0 |
 | `packages/opencode` | `@seangle/opencode-remember` | 0.1.0 |
-| `packages/dsh` | `@seangle/dsh-remember` | 0.1.0 |
+| `packages/dsh` | `@seangle/dsh-remember` | 0.1.1 |
 
 ## Prepare and verify
 
@@ -41,7 +41,7 @@ npm publish ./artifacts/seangle-remember-core-0.1.0.tgz --access public
 npm publish ./artifacts/seangle-remember-migrators-0.1.0.tgz --access public
 npm publish ./artifacts/seangle-pi-remember-0.3.0.tgz --access public
 npm publish ./artifacts/seangle-opencode-remember-0.1.0.tgz --access public
-npm publish ./artifacts/seangle-dsh-remember-0.1.0.tgz --access public
+npm publish ./artifacts/seangle-dsh-remember-0.1.1.tgz --access public
 ```
 
 An accepted upload can remain in registry processing for several minutes. A new

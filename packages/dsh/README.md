@@ -29,8 +29,10 @@ after `pnpm install` and `npm run build` in the repository root.
 ```
 
 Host packages (`@deepseek-ai/dsh-*`, `@deepseek-ai/schemastery`) are peer
-dependencies supplied by DSH, not bundled copies. Tested against DSH desktop
-**0.2.1-rc.3** (host packages `0.2.1-rc.3`, schemastery `3.18.5`).
+dependencies supplied by DSH, not bundled copies. They are marked optional so a
+plain npm install does not pull stale harness copies into the plugin; DSH must
+provide them at runtime. Tested against DSH desktop **0.2.1-rc.3** (host packages
+`0.2.1-rc.3`, schemastery `3.18.5`).
 
 ## Stores and context
 

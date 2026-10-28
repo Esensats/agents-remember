@@ -66,6 +66,7 @@ for (const name of ["core", "migrators", "pi", "opencode", "dsh"]) {
     ]) {
       assert.ok(shipped.peerDependencies[host], host);
       assert.equal(shipped.dependencies[host], undefined, host);
+      assert.equal(shipped.peerDependenciesMeta?.[host]?.optional, true, `${host} must be optional`);
     }
   }
   console.log(`${packed.name}@${packed.version}: ${packed.files.length} files, ${packed.size} bytes -> ${tarball}`);
