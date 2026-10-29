@@ -11,7 +11,7 @@ const artifacts = join(root, "artifacts");
 await mkdir(artifacts, { recursive: true });
 execFileSync(process.execPath, ["scripts/build.mjs"], { cwd: root, stdio: "inherit" });
 
-for (const name of ["core", "migrators", "pi", "opencode", "dsh"]) {
+for (const name of ["core", "migrators", "cli", "pi", "opencode", "dsh"]) {
   const cwd = join(root, "packages", name);
   const manifest = JSON.parse(await readFile(join(cwd, "package.json"), "utf8"));
   assert.notEqual(manifest.private, true, manifest.name);
@@ -23,7 +23,8 @@ for (const name of ["core", "migrators", "pi", "opencode", "dsh"]) {
   assert.equal(packed.name, manifest.name);
   assert.equal(packed.version, manifest.version);
   const paths = packed.files.map(file => file.path);
-  for (const required of ["dist/index.js", "README.md", "LICENSE", "package.json"]) {
+  const entry = name === "cli" ? "dist/main.js" : "dist/index.js";
+  for (const required of [entry, "README.md", "LICENSE", "package.json"]) {
     assert.ok(paths.includes(required), `${manifest.name}: missing ${required}`);
   }
   assert.ok(paths.every(path =>
@@ -36,7 +37,8 @@ for (const name of ["core", "migrators", "pi", "opencode", "dsh"]) {
   assert.equal(shipped.publishConfig.access, "public");
   assert.equal(shipped.repository.directory, `packages/${name}`);
   for (const [dependency, range] of Object.entries(shipped.dependencies ?? {})) {
-    assert.match(range, /^\^\d+\.\d+\.\d+$/, `${dependency}: non-registry dependency ${range}`);
+    // Registry ranges only: no file:/link:/workspace: specifiers in a tarball.
+    assert.match(range, /^[~^]\d+\.\d+\.\d+$/, `${dependency}: non-registry dependency ${range}`);
   }
   if (name === "pi") {
     assert.ok(shipped.keywords.includes("pi-package"));
@@ -46,6 +48,14 @@ for (const name of ["core", "migrators", "pi", "opencode", "dsh"]) {
       assert.ok(shipped.peerDependencies[host], host);
       assert.equal(shipped.dependencies[host], undefined, host);
     }
+  }
+  if (name === "cli") {
+    assert.equal(shipped.bin.remember, "./dist/main.js");
+    assert.equal(shipped.exports, undefined);
+    assert.match(execFileSync("tar", ["-xOf", tarball, "package/dist/main.js"], { encoding: "utf8" }), /^#!\/usr\/bin\/env node\n/);
+    const listing = execFileSync("tar", ["-tvf", tarball], { encoding: "utf8" });
+    assert.match(listing, /-rwxr-xr-x .*dist\/main\.js$/m, "dist/main.js must stay executable");
+    assert.ok(shipped.dependencies["@earendil-works/pi-tui"], "pi-tui dependency missing");
   }
   if (name === "opencode") {
     assert.ok(shipped.keywords.includes("opencode-plugin"));

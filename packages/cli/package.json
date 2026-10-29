@@ -1,0 +1,42 @@
+{
+  "name": "@seangle/remember-cli",
+  "version": "0.1.0",
+  "description": "Human-facing explorer for agents-remember plain-file memory: inspect stores, list facts and notes, search, preview the injected snapshot, and browse interactively.",
+  "license": "Apache-2.0",
+  "author": "Esensats",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Esensats/agents-remember.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://github.com/Esensats/agents-remember/tree/main/packages/cli#readme",
+  "bugs": {
+    "url": "https://github.com/Esensats/agents-remember/issues"
+  },
+  "keywords": ["memory", "coding-agents", "plain-file", "cli", "tui", "explorer"],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "type": "module",
+  "bin": {
+    "remember": "./dist/main.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "dependencies": {
+    "@earendil-works/pi-tui": "~1.4.0",
+    "@seangle/remember-core": "^0.1.0"
+  },
+  "engines": {
+    "node": ">=22.15.0"
+  },
+  "scripts": {
+    "prepack": "node ../../scripts/build.mjs",
+    "build": "node ../../scripts/build.mjs",
+    "test": "node --test test/*.test.ts"
+  }
+}

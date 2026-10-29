@@ -7,6 +7,7 @@ public leaf packages only.
 |---|---|---|
 | `packages/core` | `@seangle/remember-core` | 0.1.0 |
 | `packages/migrators` | `@seangle/remember-migrators` | 0.1.0 |
+| `packages/cli` | `@seangle/remember-cli` | 0.1.0 |
 | `packages/pi` | `@seangle/pi-remember` | 0.3.0 |
 | `packages/opencode` | `@seangle/opencode-remember` | 0.1.0 |
 | `packages/dsh` | `@seangle/dsh-remember` | 0.1.1 |
@@ -25,11 +26,14 @@ public leaf packages only.
 `npm run pack` builds JavaScript and copies the root license into each package,
 then creates and validates tarballs under the gitignored `artifacts/` directory.
 Each public package also has a `prepack` hook so direct packing builds first.
-`test:packed` installs the five tarballs offline in a fresh directory outside
+`test:packed` installs the six tarballs offline in a fresh directory outside
 the workspace, suppresses automatic host-peer installation, and exercises all
 ten tools, migrations, recovery, commands, and prompt injection in all three
-adapter suites, plus the DSH smoke when host packages are available. It retains
-that temporary installation for inspection.
+adapter suites, plus the DSH smoke when host packages are available. It also
+runs the installed `remember` bin against a fixture store and checks the non-TTY
+guard for `browse`. The CLI's `@earendil-works/pi-tui` dependency is seeded from
+the workspace so the install stays offline; it retains that temporary
+installation for inspection.
 
 ## Publish
 
@@ -39,6 +43,7 @@ tarballs**, not repacked directories, in dependency order:
 ```sh
 npm publish ./artifacts/seangle-remember-core-0.1.0.tgz --access public
 npm publish ./artifacts/seangle-remember-migrators-0.1.0.tgz --access public
+npm publish ./artifacts/seangle-remember-cli-0.1.0.tgz --access public
 npm publish ./artifacts/seangle-pi-remember-0.3.0.tgz --access public
 npm publish ./artifacts/seangle-opencode-remember-0.1.0.tgz --access public
 npm publish ./artifacts/seangle-dsh-remember-0.1.1.tgz --access public

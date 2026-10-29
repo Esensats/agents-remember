@@ -8,7 +8,7 @@
  * ships is plain ESM JavaScript. `strip` mode erases annotations only, so the
  * source must avoid enums, namespaces, and parameter properties.
  */
-import { cp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { stripTypeScriptTypes } from "node:module";
@@ -16,9 +16,11 @@ import { stripTypeScriptTypes } from "node:module";
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const packagesDir = join(root, "packages");
 
-/** Rewrite `from "./x.ts"` and `export … from "../y.ts"` to the emitted `.js`. */
+/** Rewrite `from "./x.ts"`, `export … from "../y.ts"` and `import("./z.ts")` to the emitted `.js`. */
 function rewriteSpecifiers(code) {
-  return code.replace(/(\bfrom\s*["'])(\.{1,2}\/[^"']*)\.ts(["'])/g, "$1$2.js$3");
+  return code
+    .replace(/(\bfrom\s*["'])(\.{1,2}\/[^"']*)\.ts(["'])/g, "$1$2.js$3")
+    .replace(/(\bimport\(\s*["'])(\.{1,2}\/[^"']*)\.ts(["'])/g, "$1$2.js$3");
 }
 
 async function* walk(dir) {
@@ -47,6 +49,8 @@ async function buildPackage(name) {
     const code = rewriteSpecifiers(stripTypeScriptTypes(source, { mode: "strip" }));
     await mkdir(dirname(target), { recursive: true });
     await writeFile(target, code);
+    // Bin entries are executed directly; npm preserves the mode from the tarball.
+    if (source.startsWith("#!")) await chmod(target, 0o755);
   }
   // Keep one authoritative license, but include it in every npm tarball.
   await cp(join(root, "LICENSE"), join(packagesDir, name, "LICENSE"));
