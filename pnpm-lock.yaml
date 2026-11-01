@@ -14,7 +14,7 @@ importers:
         specifier: ~1.4.0
         version: 1.4.0
       '@seangle/remember-core':
-        specifier: ^0.1.0
+        specifier: ^0.1.1
         version: link:../core
 
   packages/core: {}
@@ -22,34 +22,34 @@ importers:
   packages/dsh:
     dependencies:
       '@seangle/remember-core':
-        specifier: ^0.1.0
+        specifier: ^0.1.1
         version: link:../core
       '@seangle/remember-migrators':
-        specifier: ^0.1.0
+        specifier: ^0.1.1
         version: link:../migrators
 
   packages/migrators:
     dependencies:
       '@seangle/remember-core':
-        specifier: ^0.1.0
+        specifier: ^0.1.1
         version: link:../core
 
   packages/opencode:
     dependencies:
       '@seangle/remember-core':
-        specifier: ^0.1.0
+        specifier: ^0.1.1
         version: link:../core
       '@seangle/remember-migrators':
-        specifier: ^0.1.0
+        specifier: ^0.1.1
         version: link:../migrators
 
   packages/pi:
     dependencies:
       '@seangle/remember-core':
-        specifier: ^0.1.0
+        specifier: ^0.1.1
         version: link:../core
       '@seangle/remember-migrators':
-        specifier: ^0.1.0
+        specifier: ^0.1.1
         version: link:../migrators
 
 packages:

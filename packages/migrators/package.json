@@ -1,6 +1,6 @@
 {
   "name": "@seangle/remember-migrators",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Host-agnostic, best-effort migrators from other plain-file memory stores into remember v1.",
   "license": "Apache-2.0",
   "author": "Esensats",
@@ -28,7 +28,7 @@
     "LICENSE"
   ],
   "dependencies": {
-    "@seangle/remember-core": "^0.1.0"
+    "@seangle/remember-core": "^0.1.1"
   },
   "engines": {
     "node": ">=22.15.0"

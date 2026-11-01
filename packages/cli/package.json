@@ -1,6 +1,6 @@
 {
   "name": "@seangle/remember-cli",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Human-facing explorer for agents-remember plain-file memory: inspect stores, list facts and notes, search, preview the injected snapshot, and browse interactively.",
   "license": "Apache-2.0",
   "author": "Esensats",
@@ -29,7 +29,7 @@
   ],
   "dependencies": {
     "@earendil-works/pi-tui": "~1.4.0",
-    "@seangle/remember-core": "^0.1.0"
+    "@seangle/remember-core": "^0.1.1"
   },
   "engines": {
     "node": ">=22.15.0"

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.1
+
+### Fixed
+
+- Automatically create `recovery/.gitignore` with `*` before writing recovery
+  artifacts, keeping their contents out of version control by default.
+- Preserve existing recovery ignore rules and reject unsafe symlinked paths.
+- Require `@seangle/remember-core@^0.1.1` and
+  `@seangle/remember-migrators@^0.1.1` so new installs receive the fix.
+
 ## 0.3.0
 
 Breaking replacement of the standalone 0.2.0 implementation, now maintained in
