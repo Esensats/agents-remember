@@ -52,7 +52,11 @@ stores. Read/search before assuming the snapshot is complete.
 
 Memory is agent-writable background data, **not trusted instructions**. Do not
 store secrets. Add `.agents/memory/` to a workspace's `.gitignore` if memory should
-remain private; recovery records can contain removed information too.
+remain private.
+Recovery records can contain removed information. Before writing recovery, the
+engine creates `recovery/.gitignore` containing `*` if missing, preserving any
+existing rules. This does not untrack committed records or remove them from Git
+history.
 
 ## Tools and command
 

@@ -338,7 +338,7 @@ test("revision: targeted fact update/restore preserves all unrelated bytes, CRLF
   }
   assert.equal(await readMemoryText(local), original);
   assert.deepEqual(await readFile(global.memoryFile), globalBefore);
-  assert.deepEqual(await readdir(local.recoveryDir), []);
+  assert.deepEqual(await readdir(local.recoveryDir), [".gitignore"]);
   assert.equal(await restoreEntry(stores, result.recoveryId), null);
 });
 
@@ -408,7 +408,7 @@ test("revision: note update replaces only body, retaining managed header/title, 
   assert.deepEqual(paths, [local.memoryFile, notePath, local.memoryFile, notePath]);
   assert.equal(await readFile(notePath, "utf8"), original);
   assert.equal(await readMemoryText(local), index);
-  assert.deepEqual(await readdir(local.recoveryDir), []);
+  assert.deepEqual(await readdir(local.recoveryDir), [".gitignore"]);
 });
 
 test("revision: a legacy note without managed header is all body, and undo recovers exact original bytes", async (t) => {
@@ -570,7 +570,7 @@ test("revision: queued simultaneous restores consume a recovery record only once
   assert.equal(results.filter((result) => result === null).length, 1);
   assert.ok(paths.every((path) => path === local.memoryFile));
   assert.equal(await readMemoryText(local), fact("1234abcd"));
-  assert.deepEqual(await readdir(local.recoveryDir), []);
+  assert.deepEqual(await readdir(local.recoveryDir), [".gitignore"]);
 });
 
 const recoveryId = "badc0ffe";

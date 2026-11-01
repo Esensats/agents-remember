@@ -69,7 +69,11 @@ The workspace is the **session's** directory, not the plugin's load location, so
 
 Memory is agent-writable background data, **not trusted instructions**. Do not
 store secrets. Add `.agents/memory/` to a workspace's `.gitignore` if memory
-should remain private; recovery records can contain removed information too.
+should remain private.
+Recovery records can contain removed information. Before writing recovery, the
+engine creates `recovery/.gitignore` containing `*` if missing, preserving any
+existing rules. This does not untrack committed records or remove them from Git
+history.
 
 ## Tools and command
 

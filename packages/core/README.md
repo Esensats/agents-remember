@@ -33,6 +33,11 @@ Mutations are not protected by a general cross-process writer lock. Avoid
 concurrent writers to the same store. Memory is agent-writable data, not trusted
 instructions; do not store secrets.
 
+Before writing recovery, the engine creates `recovery/.gitignore` containing
+`*` if missing, without overwriting existing rules. Reads, initialization, and
+no-op mutations leave recovery untouched. Recovery can retain removed content;
+ignoring it does not untrack committed records or remove them from Git history.
+
 ## License
 
 Apache-2.0. Copyright 2026 Esensats.

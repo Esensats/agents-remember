@@ -139,7 +139,7 @@ test("frontmatter: update advances only modified-date at minute precision; no-op
   assert.equal(await readFile(path, "utf8"), changedText);
   assert.equal((await lstat(path)).mtimeMs, changedStat.mtimeMs);
   assert.equal((await lstat(path)).ino, changedStat.ino);
-  assert.deepEqual(await readdir(global.recoveryDir), [`${result.recoveryId}.json`]);
+  assert.deepEqual((await readdir(global.recoveryDir)).sort(), [".gitignore", `${result.recoveryId}.json`]);
   assert.deepEqual(await readFile(recoveryPath), recoveryBytes);
   assert.equal((await restoreEntry(stores, result.recoveryId, undefined, ["global"]))?.status, "restored");
   assert.equal(await readFile(path, "utf8"), original, "undo recovers original metadata dates and body bytes");

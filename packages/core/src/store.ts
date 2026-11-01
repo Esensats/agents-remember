@@ -72,6 +72,24 @@ async function ensureOwnedDirectory(store: StorePaths, path: string, mode: numbe
   assertNoRedirect(store, path);
 }
 
+/** Recovery is local undo history: ignore it before publishing any record. */
+async function ensureRecoveryDirectory(store: StorePaths): Promise<void> {
+  await ensureOwnedDirectory(store, store.recoveryDir, 0o700);
+  const ignoreFile = join(store.recoveryDir, ".gitignore");
+  assertNoRedirect(store, ignoreFile);
+  if (!existsSync(ignoreFile)) {
+    try { await createFileExclusive(ignoreFile, "*\n"); }
+    catch (error) {
+      // Another writer may have installed its own rules. Never replace them.
+      if (!isObject(error) || error.code !== "EEXIST") throw error;
+    }
+  }
+  assertNoRedirect(store, ignoreFile);
+  if (!lstatSync(ignoreFile).isFile()) {
+    throw new MemoryConflictError("Recovery .gitignore is not a regular file; refusing to use it.");
+  }
+}
+
 export interface StorePaths {
   scope: Scope;
   dir: string;
@@ -305,7 +323,7 @@ export async function forgetEntries(
     const noteRels = new Set(notes.map((note) => note.rel));
     const deletedEntries = [...removed.filter((entry) => !noteRels.has(noteReference(entry) ?? "")),
       ...snapshots.map((note) => noteEntry(note.rel, parseNote(note.text)!.metadata))];
-    await ensureOwnedDirectory(store, store.recoveryDir, 0o700);
+    await ensureRecoveryDirectory(store);
     const id = randomUUID().slice(0, 8);
     const record = { id, scope: store.scope, timestamp: minuteStamp(), kind: "forget",
       entries: deletedEntries, notes: snapshots };
@@ -718,7 +736,7 @@ export async function updateMemo(
       return { status: "error", message: "Note changed while preparing the update; read it again before retrying." };
     }
     const recoveryId = randomUUID().slice(0, 8);
-    await ensureOwnedDirectory(store, store.recoveryDir, 0o700);
+    await ensureRecoveryDirectory(store);
     const record = { kind: "update", id: recoveryId, scope: store.scope, timestamp: minuteStamp(),
       memoId: parseMemoId(id), before, after, meta: memo.entry.meta, noteRel: memo.noteRel };
     await createFileExclusive(join(store.recoveryDir, `${recoveryId}.json`), JSON.stringify(record, null, 2));

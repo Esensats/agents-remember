@@ -154,7 +154,8 @@ for (const kind of ["note", "forget recovery", "update recovery"] as const) {
     let interruptedPath: string | undefined;
     mockFs(t, "writeFile", (async (path, data, options) => {
       const directory = kind === "note" ? store.notesDir : store.recoveryDir;
-      if (!interruptedPath && typeof path === "string" && dirname(path) === directory) {
+      if (!interruptedPath && typeof path === "string" && dirname(path) === directory &&
+          (kind === "note" || path.includes(".json."))) {
         interruptedPath = path;
         // For notes keep the entire valid header: direct-to-.md creation would
         // poison the catalogue even though only the body is partially written.
@@ -176,7 +177,8 @@ for (const kind of ["note", "forget recovery", "update recovery"] as const) {
     assert.equal(await readCatalogue(store), catalogue);
     if (existing) assert.equal(await readFile(existing.notePath!, "utf8"), original);
     const directory = kind === "note" ? store.notesDir : store.recoveryDir;
-    assert.deepEqual(await readdir(directory), [], "failed publication must leave no final or temporary artifact");
+    assert.deepEqual(await readdir(directory), kind === "note" ? [] : [".gitignore"],
+      "failed publication must leave no final or temporary artifact except the recovery ignore rule");
     const result = await operation();
     if (kind === "note") {
       assert.equal(parseNote(await readFile((result as Awaited<ReturnType<typeof writeNote>>).notePath!, "utf8"))!.body, "Complete body\n");
@@ -198,7 +200,8 @@ for (const kind of ["note", "forget recovery", "update recovery"] as const) {
     let collisionPath: string | undefined;
     const sentinel = "Concurrent creator owns these exact bytes\r\n";
     mockFs(t, "link", (async (source, destination) => {
-      if (!collisionPath && typeof destination === "string" && destination.startsWith(store.dir + "/")) {
+      if (!collisionPath && typeof destination === "string" && destination.startsWith(store.dir + "/") &&
+          (kind === "note" || destination.endsWith(".json"))) {
         collisionPath = destination;
         assert.ok(String(source).endsWith(".tmp"));
         await writeFile(destination, sentinel, { flag: "wx" });
@@ -221,6 +224,68 @@ for (const kind of ["note", "forget recovery", "update recovery"] as const) {
   });
 }
 
+for (const kind of ["forget", "update"] as const) {
+  test(`an interrupted recovery ignore write prevents ${kind} and is safely retryable`, async t => {
+    const { store } = await fixture(t);
+    const fact = await appendEntry(store, "Original private fact");
+    const original = await readFile(store.memoryFile);
+    const realWrite = fs.writeFile;
+    const failure = new Error("simulated interrupted ignore write");
+    mockFs(t, "writeFile", (async (path, data, options) => {
+      if (typeof path === "string" && path.startsWith(join(store.recoveryDir, ".gitignore."))) {
+        await realWrite(path, "partial", options);
+        throw failure;
+      }
+      return realWrite(path, data, options);
+    }) as typeof fs.writeFile);
+    const operation = () => kind === "forget" ? forgetEntries(store, fact.id!)
+      : updateMemo(store, fact.id!, "Updated private fact");
+    await assert.rejects(operation(), error => error === failure);
+    assert.deepEqual(await readFile(store.memoryFile), original);
+    assert.deepEqual(await readdir(store.recoveryDir), []);
+    t.mock.restoreAll();
+    syncBuiltinESMExports();
+    await operation();
+    assert.equal(await readFile(join(store.recoveryDir, ".gitignore"), "utf8"), "*\n");
+    assert.equal((await statMemory(store)).recoveryCount, 1);
+  });
+
+  for (const winner of ["file", "symlink"] as const) {
+    test(`${kind} never overwrites a concurrently published recovery ignore ${winner}`, async t => {
+      const { root, store } = await fixture(t);
+      const fact = await appendEntry(store, "Original private fact");
+      const original = await readFile(store.memoryFile);
+      const ignoreFile = join(store.recoveryDir, ".gitignore");
+      const outside = join(root, "external-ignore");
+      const sentinel = "Concurrent rules stay unchanged\r\n";
+      const realLink = fs.link;
+      let raced = false;
+      mockFs(t, "link", (async (source, destination) => {
+        if (destination === ignoreFile) {
+          raced = true;
+          if (winner === "file") await writeFile(ignoreFile, sentinel, { flag: "wx" });
+          else await symlink(outside, ignoreFile);
+        }
+        return realLink(source, destination);
+      }) as typeof fs.link);
+      const operation = () => kind === "forget" ? forgetEntries(store, fact.id!)
+        : updateMemo(store, fact.id!, "Updated private fact");
+      if (winner === "file") {
+        await operation();
+        assert.equal(await readFile(ignoreFile, "utf8"), sentinel);
+        assert.equal((await statMemory(store)).recoveryCount, 1);
+      } else {
+        await assert.rejects(operation(), /symlink/);
+        assert.deepEqual(await readFile(store.memoryFile), original);
+        assert.deepEqual(await readdir(store.recoveryDir), [".gitignore"]);
+        await absent(outside);
+      }
+      assert.ok(raced);
+      assert.ok(!(await readdir(store.recoveryDir)).some(path => path.endsWith(".tmp")));
+    });
+  }
+}
+
 test("new note/recovery files are 0600 and the recovery directory is 0700 even with permissive umask", async t => {
   const { store } = await fixture(t);
   const mask = process.umask(0o000);
@@ -234,7 +299,8 @@ test("new note/recovery files are 0600 and the recovery directory is 0700 even w
     assert.ok(forgotten.recoveryId);
     assert.equal((await lstat(store.recoveryDir)).mode & 0o777, 0o700);
     const files = await readdir(store.recoveryDir);
-    assert.equal(files.length, 2);
+    assert.equal(files.length, 3);
+    assert.ok(files.includes(".gitignore"));
     for (const file of files) assert.equal((await lstat(join(store.recoveryDir, file))).mode & 0o777, 0o600);
   } finally { process.umask(mask); }
 });
