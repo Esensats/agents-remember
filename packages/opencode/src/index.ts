@@ -1,9 +1,16 @@
 import { basename } from "node:path";
 import type { Context } from "@opencode/plugin";
-import { ensureStoreVersion, readStoreVersion } from "@seangle/remember-core";
+import { SnapshotLedger, ensureStoreVersion, readStoreVersion } from "@seangle/remember-core";
 import { migrate } from "@seangle/remember-migrators";
 import { loadConfig, storesFor, type RememberConfig } from "./context.ts";
-import { detectForWorkspace, formatReport, snapshotFor, statusText, toolSpecs } from "./tools.ts";
+import {
+  detectForWorkspace,
+  formatReport,
+  readSnapshotInputs,
+  renderSnapshot,
+  statusText,
+  toolSpecs,
+} from "./tools.ts";
 
 /**
  * Offer a migration once per session when a legacy store exists and the target
@@ -33,9 +40,13 @@ function createMigrationNotice() {
 
 /**
  * Mount the memory engine: ten model-facing tools, a `/memory` command, and a
- * system snapshot rebuilt for every model request. OpenCode assembles the
- * system prompt per call and never persists it, so appending the block is both
- * duplicate-free and cache-stable between writes without any session bookkeeping.
+ * per-session system snapshot.
+ *
+ * The snapshot is written once per session and then held byte-identical: the
+ * system prompt is the first bytes of every request, so re-rendering it after a
+ * memory write would throw away the provider's cached prefix every time. A
+ * later change is delivered as a `<system_reminder>` synthetic message, which
+ * appends at the end of the conversation and leaves the head untouched.
  */
 export default {
   id: "remember",
@@ -106,6 +117,12 @@ export default {
       });
     });
 
+    const ledger = new SnapshotLedger({ maxChars: config.deltaChars, maxSessions: 16 });
+    /** Reminders already handed to a session, so a change is delivered once. */
+    const delivered = new Map<string, string>();
+    /** The cwd each session had when its snapshot was frozen. */
+    const frozenAt = new Map<string, string>();
+
     await ctx.session.hook("context", async (event) => {
       if (!config.autoInject) return;
       try {
@@ -122,9 +139,36 @@ export default {
           }
         }
 
+        const inputs = await readSnapshotInputs(stores, config, cwd);
+        // A session that moved workspace starts over: its store is another one.
+        if (frozenAt.get(event.sessionID) !== cwd) {
+          ledger.forget(event.sessionID);
+          delivered.delete(event.sessionID);
+          frozenAt.set(event.sessionID, cwd);
+        }
+
+        const live = renderSnapshot(inputs, config, basename(cwd)).text;
+        let frozen = ledger.text(event.sessionID);
+        if (frozen === null) {
+          // Freeze only real content: an empty store leaves nothing at the head
+          // to protect, and its first real snapshot may appear without waste.
+          if (live !== "") {
+            ledger.freeze(event.sessionID, inputs.state, live, inputs.globalText);
+            frozen = live;
+          }
+        } else {
+          const reminder = ledger.delta(event.sessionID, inputs.state, { globalText: inputs.globalText });
+          if (reminder !== "" && reminder !== delivered.get(event.sessionID)) {
+            // Durable and appended: the transcript itself keeps the change, so
+            // the baseline advances and the next block holds only what is new.
+            await ctx.session.synthetic({ sessionID: event.sessionID, text: reminder });
+            delivered.set(event.sessionID, reminder);
+            ledger.freeze(event.sessionID, inputs.state, frozen, inputs.globalText);
+          }
+        }
+
         const notice = await migrationNotice(event.sessionID, cwd, config);
-        const snapshot = await snapshotFor(stores, config, basename(cwd));
-        const text = [notice, snapshot.text].filter((part) => part.trim().length > 0).join("\n\n");
+        const text = [notice, frozen ?? ""].filter((part) => part.trim().length > 0).join("\n\n");
         if (!text) return;
         event.system.push({ type: "text", text });
       } catch {

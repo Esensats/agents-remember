@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.4.0
+
+### Changed
+
+- The `remember` section is written once per session and held byte-identical. A
+  later change is a `<system_reminder>` context message at the end of the request
+  instead of a new system prompt, so the provider's prefix cache survives every
+  memory write. A new session, a compaction, or a workspace change takes a fresh
+  baseline; more than 12 simultaneous changes render as one line asking for a
+  read of the store.
+- The migration notice rides with that reminder, so it no longer changes the
+  section when it appears or disappears.
+- Child workspaces with a bank of their own are listed under
+  `## Nested workspace memory` (path and counts only). The discovery walk is
+  depth-limited, cached for 30 s, and never runs a subprocess or a synchronous
+  filesystem call.
+- `memory_status` reports the nested banks and the directories scanned.
+- Requires `@seangle/remember-core@^0.2.0` and
+  `@seangle/remember-migrators@^0.2.0`.
+
+### Added
+
+- `REMEMBER_NESTED`, `REMEMBER_NESTED_DEPTH`, `REMEMBER_INJECT_CHARS_NESTED`,
+  and `REMEMBER_DELTA_CHARS`.
+
 ## 0.3.1
 
 ### Fixed

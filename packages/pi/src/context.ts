@@ -15,10 +15,22 @@ export interface RememberConfig {
   injectCharsGlobal: number;
   injectCharsLocal: number;
   autoInject: boolean;
+  /** Look for child workspaces that keep a memory bank of their own. */
+  nested: boolean;
+  /** Directory levels below the workspace root, defaults to 2. */
+  nestedDepth: number;
+  /** Budget of the nested-bank section, header included. */
+  injectCharsNested: number;
+  /** Budget of one `<system_reminder>` block that carries a later change. */
+  deltaChars: number;
 }
 
 function truthy(value: string | undefined): boolean {
   return value !== undefined && ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
+}
+
+function falsy(value: string | undefined): boolean {
+  return value !== undefined && ["0", "false", "no", "off"].includes(value.trim().toLowerCase());
 }
 
 function intEnv(env: NodeJS.ProcessEnv, name: string, fallback: number): number {
@@ -43,6 +55,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): RememberConfig
     injectCharsGlobal: intEnv(env, "REMEMBER_INJECT_CHARS_GLOBAL", 3000),
     injectCharsLocal: intEnv(env, "REMEMBER_INJECT_CHARS_LOCAL", 3000),
     autoInject: env.REMEMBER_AUTO_INJECT === undefined ? true : truthy(env.REMEMBER_AUTO_INJECT),
+    nested: !falsy(env.REMEMBER_NESTED),
+    nestedDepth: Math.min(8, intEnv(env, "REMEMBER_NESTED_DEPTH", 2)),
+    injectCharsNested: intEnv(env, "REMEMBER_INJECT_CHARS_NESTED", 600),
+    deltaChars: intEnv(env, "REMEMBER_DELTA_CHARS", 900),
   };
 }
 

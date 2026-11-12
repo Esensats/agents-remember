@@ -41,6 +41,8 @@ Common options:
 | `--scope global\|local\|both` | Which store to read (default `both`) |
 | `--root <dir>` | Workspace root instead of the current directory |
 | `--dir-name <name>` | Per-workspace store directory (default `.agents`) |
+| `--no-nested` | Leave child workspaces with a bank out of `snapshot` and `summary` |
+| `--nested-depth <n>` | Directory levels below the root to look at (1–8, default 2) |
 | `--global-dir <dir>` | Explicit global store, e.g. `~/.pi/agent/memory` |
 | `--limit <n>` | Search hits (default `20`) |
 | `--json` | Machine-readable output |

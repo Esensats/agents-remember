@@ -323,7 +323,7 @@ describe("workspace resolution", () => {
 });
 
 describe("injection", () => {
-  test("adds one stable snapshot per request and refreshes after a write", async () => {
+  test("the system block is frozen per session and changes arrive as reminders", async () => {
     const root = await workspace();
     const host = fakeHost(root);
     await adapter.setup(host.ctx);
@@ -337,12 +337,40 @@ describe("injection", () => {
     assert.equal(first[0].text, second[0].text);
     assert.match(first[0].text, /^<remember>/);
     assert.match(first[0].text, /The build uses pnpm\./);
+    assert.deepEqual(host.synthetics, [], "an unchanged store sends nothing");
 
     await host.call("memory_write", { content: "Tests run with node --test." });
     const refreshed = await host.inject();
-    assert.equal(refreshed.length, 1);
-    assert.match(refreshed[0].text, /Tests run with node --test\./);
-    assert.notEqual(refreshed[0].text, first[0].text);
+    assert.equal(refreshed[0].text, first[0].text, "the head is byte-identical");
+    assert.equal(host.synthetics.length, 1);
+    assert.match(host.synthetics[0], /^<system_reminder>/);
+    assert.match(host.synthetics[0], /Tests run with node --test\./);
+    assert.doesNotMatch(host.synthetics[0], /The build uses pnpm/, "only the change is sent");
+
+    // The same change is never delivered twice.
+    await host.inject();
+    assert.equal(host.synthetics.length, 1);
+
+    await host.call("memory_forget", { text: "node --test" });
+    await host.inject();
+    assert.equal(host.synthetics.length, 2);
+    assert.match(host.synthetics[1], /Tests run with node --test\./);
+  });
+
+  test("nested banks are listed in the snapshot, not merged into it", async () => {
+    const root = await workspace();
+    await mkdir(join(root, "repos", "petri", ".agents", "memory"), { recursive: true });
+    await writeFile(join(root, "repos", "petri", ".agents", "memory", "MEMORY.md"), "child fact\n");
+    const host = fakeHost(root);
+    await adapter.setup(host.ctx);
+    await host.call("memory_init");
+    await host.call("memory_write", { content: "Parent fact." });
+
+    const [system] = await host.inject();
+    assert.match(system.text, /## Nested workspace memory/);
+    assert.match(system.text, /- repos\/petri — 1 fact, 0 notes/);
+    assert.doesNotMatch(system.text, /child fact/);
+    assert.match(success(await host.call("memory_status", {})), /nested: 1 bank\(s\) below/);
   });
 
   test("injects nothing before local memory is initialized", async () => {

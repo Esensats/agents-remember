@@ -56,13 +56,17 @@ Facts live in `MEMORY.md`; notes live in `notes/<date>-<slug>.md` with validated
 The `remember.json` marker records store format version 1. Updates and deletions
 produce recovery records for conflict-aware undo.
 
-The snapshot is appended to the model request's system prompt on **every** model
-call. OpenCode assembles that prompt per request and never persists it, so there
-is no duplicate-block bookkeeping: the bytes are identical while the store is
-unchanged (keeping prefix caches valid), a write is visible on the next step, and
-compaction cannot drop the snapshot. Facts and a derived note catalogue ride in
-context; note bodies stay on disk until read or searched. Each scope has a
-default 3,000-character budget, with middle truncation for large stores.
+The snapshot is written into the system prompt once per session and then held
+byte-identical. The system prompt is the first bytes of every request, so
+re-rendering it after a write would discard the provider's cached prefix for the
+whole conversation. A later change is delivered once as a `<system_reminder>`
+synthetic message: it appends at the end, leaves the head untouched, and the
+baseline advances so the next block holds only what is new. Facts and a derived
+note catalogue ride in context; note bodies stay on disk until read or searched.
+Each scope has a default 3,000-character budget, with middle truncation for large
+stores. Child workspaces with a bank of their own are listed under
+`## Nested workspace memory` (path and counts only, never their facts); their
+number is bounded by a depth-limited, cached walk.
 
 The workspace is the **session's** directory, not the plugin's load location, so
 `session_move` and worktrees resolve to their own local store.
@@ -118,6 +122,10 @@ Plugin options in `opencode.json(c)`:
 | Option | Default |
 |---|---|
 | `dirName` | `.agents` (workspace configuration directory, not a store path) |
+| `nested` | `true` — list child workspaces that keep a bank |
+| `nestedDepth` | `2` — directory levels below the session workspace |
+| `injectCharsNested` | `600` — budget of the nested section |
+| `deltaChars` | `900` — budget of one `<system_reminder>` |
 | `globalDir` | `$XDG_DATA_HOME/opencode/memory` |
 | `injectCharsGlobal` | `3000` |
 | `injectCharsLocal` | `3000` |

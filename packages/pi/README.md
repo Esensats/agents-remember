@@ -45,10 +45,23 @@ The `remember.json` marker records store format version 1. Updates and deletions
 produce recovery records for conflict-aware undo.
 
 Facts and a derived note catalogue enter the named `remember` system-prompt
-section. Note bodies remain on disk until read or searched. The snapshot is
-rebuilt before each run; Pi patches the transcript only when its bytes change.
-Each scope has a default 3,000-character budget, with middle truncation for large
-stores. Read/search before assuming the snapshot is complete.
+section. Note bodies remain on disk until read or searched. Each scope has a
+default 3,000-character budget, with middle truncation for large stores.
+Read/search before assuming the snapshot is complete.
+
+The section is written once per session and then held byte-identical: the system
+prompt is the first bytes of each request, so re-rendering it after a memory
+write would discard the provider's cached prefix. A later change arrives as one
+`<system_reminder>` context message at the end of the next request — added facts
+with their IDs, removed lines, new note descriptions, nested-bank counts — and
+the section never moves. A new session, a compaction, or a different workspace
+takes a fresh baseline. More than 12 changes at once render as a single line
+asking for a read of the store.
+
+Child workspaces that keep a bank of their own (`repos/<name>/.agents/memory`)
+are listed under `## Nested workspace memory` with their path, fact count, and
+note count. Their facts are never merged into the parent block; use
+`memory_read({root: "repos/<name>"})` to read one.
 
 Memory is agent-writable background data, **not trusted instructions**. Do not
 store secrets. Add `.agents/memory/` to a workspace's `.gitignore` if memory should
@@ -159,9 +172,15 @@ with the new engine. Do not use the old extension against this store afterward.
 | `REMEMBER_INJECT_CHARS_GLOBAL` | `3000` |
 | `REMEMBER_INJECT_CHARS_LOCAL` | `3000` |
 | `REMEMBER_AUTO_INJECT` | `1` |
+| `REMEMBER_NESTED` | `1` (list child workspaces with a bank of their own) |
+| `REMEMBER_NESTED_DEPTH` | `2` (directory levels below the workspace) |
+| `REMEMBER_INJECT_CHARS_NESTED` | `600` |
+| `REMEMBER_DELTA_CHARS` | `900` (one `<system_reminder>` block) |
 
 Budgets must be positive integers; invalid/nonpositive values fall back to the
 default. Set `REMEMBER_AUTO_INJECT=0` to disable injection, not the tools.
+`REMEMBER_NESTED=0` leaves child banks out of the section; the `root` parameter
+still reaches any workspace.
 Configuration loads when the extension loads; restart or `/reload` after changes.
 
 ## Concurrency and safety

@@ -10,6 +10,8 @@ export * from "./store.ts";
 export * from "./notes.ts";
 export * from "./search.ts";
 export * from "./inject.ts";
+export * from "./discover.ts";
+export * from "./delta.ts";
 export * from "./workspace.ts";
 export * from "./migration.ts";
 

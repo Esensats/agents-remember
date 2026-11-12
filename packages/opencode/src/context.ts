@@ -15,6 +15,14 @@ export interface RememberConfig {
   injectCharsGlobal: number;
   injectCharsLocal: number;
   autoInject: boolean;
+  /** Look for child workspaces that keep a memory bank of their own. */
+  nested: boolean;
+  /** Directory levels below the session workspace, defaults to 2. */
+  nestedDepth: number;
+  /** Budget of the nested-bank section, header included. */
+  injectCharsNested: number;
+  /** Budget of one `<system_reminder>` block that carries a later change. */
+  deltaChars: number;
 }
 
 /** OpenCode's per-user data directory; XDG overrides follow the host's own rule. */
@@ -53,6 +61,10 @@ export function loadConfig(options: Record<string, unknown> = {}, env: NodeJS.Pr
     injectCharsGlobal: intOption(options, "injectCharsGlobal", 3000),
     injectCharsLocal: intOption(options, "injectCharsLocal", 3000),
     autoInject: options.autoInject === undefined ? true : options.autoInject !== false,
+    nested: options.nested === undefined ? true : options.nested !== false,
+    nestedDepth: Math.min(8, intOption(options, "nestedDepth", 2)),
+    injectCharsNested: intOption(options, "injectCharsNested", 600),
+    deltaChars: intOption(options, "deltaChars", 900),
   };
 }
 

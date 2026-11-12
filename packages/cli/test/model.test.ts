@@ -179,3 +179,39 @@ test("candidate discovery is stable and ignores unrelated paths", () => {
   assert.equal(xdg.find((candidate) => candidate.label === "opencode")?.dir, "/data/opencode/memory");
   assert.equal(xdg.find((candidate) => candidate.label === "dsh")?.dir, "/dsh/memory");
 });
+
+test("nested banks are listed in the snapshot and can be turned off", async () => {
+  const fixture = await makeFixture();
+  const child = await writeStore(join(fixture.root, "repos", "petri", ".agents", "memory"), {
+    index: "<!-- 2026-11-01T10:00:00Z [abcdabcd] -->\nPetri uses a fixed seed.\n",
+    notes: [],
+  });
+  const ctx = createContext(fixture.root, { dirName: ".agents" }, fixture.env, fixture.home);
+  const snapshot = await snapshotFor(ctx, ctx.global, "pi", false);
+  assert.match(snapshot.text, /## Nested workspace memory/);
+  assert.match(snapshot.text, /- repos\/petri — 1 fact, 0 notes/);
+  assert.doesNotMatch(snapshot.text, /fixed seed/, "a child's facts stay out of the parent snapshot");
+  assert.ok(snapshot.nestedChars > 0);
+  assert.equal(snapshot.nestedBudget, 600);
+
+  const summary = await summarize(ctx, false);
+  assert.deepEqual(summary.nested.map((store) => store.rel), ["repos/petri"]);
+  assert.equal(summary.nested[0].facts, 1);
+
+  const off = createContext(fixture.root, { dirName: ".agents" }, { ...fixture.env, REMEMBER_NESTED: "0" }, fixture.home);
+  const plain = await snapshotFor(off, off.global, "pi", false);
+  assert.doesNotMatch(plain.text, /Nested workspace memory/);
+  assert.equal(plain.nestedChars, 0);
+  assert.equal((await summarize(off, false)).nested.length, 0);
+  assert.ok(child.endsWith(join("repos", "petri", ".agents", "memory")));
+});
+
+test("a deep bank is only found when the depth allows it", async () => {
+  const fixture = await makeFixture();
+  await writeStore(join(fixture.root, "a", "b", "c", ".agents", "memory"), { notes: [] });
+  const shallow = createContext(fixture.root, { dirName: ".agents" }, fixture.env, fixture.home);
+  assert.equal((await summarize(shallow, false)).nested.length, 0);
+
+  const deep = createContext(fixture.root, { dirName: ".agents" }, { ...fixture.env, REMEMBER_NESTED_DEPTH: "3" }, fixture.home);
+  assert.deepEqual((await summarize(deep, false)).nested.map((store) => store.rel), ["a/b/c"]);
+});

@@ -247,12 +247,31 @@ export async function readNotes(store: StorePaths): Promise<NoteRecord[]> {
 
 /** A derived catalogue, never persisted back into MEMORY.md. */
 export async function readCatalogue(store: StorePaths): Promise<string> {
-  const facts = await readMemoryText(store);
-  const refs = new Set(parseEntries(facts).map(noteReference).filter((rel) => rel !== null));
-  const notes = (await readNotes(store)).filter((note) => !refs.has(note.rel));
-  const catalogue = serializeEntries(notes.map((note) => ({ ...note.entry,
+  return (await readCatalogueWithEntries(store)).text;
+}
+
+/** The catalogue text together with the entries it was built from, read once. */
+export interface Catalogue {
+  text: string;
+  /** Facts from MEMORY.md, metadata comments retained. */
+  facts: MemoryEntry[];
+  /** Every valid note, once each. */
+  notes: NoteRecord[];
+}
+
+export async function readCatalogueWithEntries(store: StorePaths): Promise<Catalogue> {
+  const factsText = await readMemoryText(store);
+  const facts = parseEntries(factsText);
+  const notes = await readNotes(store);
+  const refs = new Set(facts.map(noteReference).filter((rel) => rel !== null));
+  const derived = notes.filter((note) => !refs.has(note.rel));
+  const catalogue = serializeEntries(derived.map((note) => ({ ...note.entry,
     meta: `<!-- ${note.metadata.created} [${note.metadata.id}] modified ${note.metadata.modified} -->` })));
-  return facts + (facts && catalogue && !facts.endsWith("\n") ? "\n" : "") + catalogue;
+  return {
+    text: factsText + (factsText && catalogue && !factsText.endsWith("\n") ? "\n" : "") + catalogue,
+    facts,
+    notes,
+  };
 }
 
 export interface AppendResult {

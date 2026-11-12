@@ -12,6 +12,14 @@ export interface RememberConfig {
   injectCharsGlobal: number;
   injectCharsLocal: number;
   autoInject: boolean;
+  /** Look for child workspaces that keep a memory bank of their own. */
+  nested: boolean;
+  /** Directory levels below the workspace root, defaults to 2. */
+  nestedDepth: number;
+  /** Budget of the nested-bank section, header included. */
+  injectCharsNested: number;
+  /** Budget of one `<system_reminder>` block that carries a later change. */
+  deltaChars: number;
 }
 
 /** Expand `~` without importing the host's shell helpers. */

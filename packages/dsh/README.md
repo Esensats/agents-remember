@@ -97,6 +97,10 @@ index are involved. Tool output is bounded and truncation is reported.
 | Option | Default |
 |---|---|
 | `dirName` | `.agents` (workspace configuration directory, not a store path) |
+| `nested` | `true` — list child workspaces that keep a bank |
+| `nestedDepth` | `2` — directory levels below the workspace |
+| `injectCharsNested` | `600` — budget of the nested section |
+| `deltaChars` | `900` — budget of one `<system_reminder>` |
 | `globalDir` | `$DSH_HOME/memory` when empty |
 | `injectCharsGlobal` | `3000` |
 | `injectCharsLocal` | `3000` |

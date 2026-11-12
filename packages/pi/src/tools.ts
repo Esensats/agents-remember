@@ -7,6 +7,8 @@ import {
   appendEntry,
   assertCurrentStoreVersion,
   buildSnapshot,
+  describeCounts,
+  discoverNestedStores,
   entryId,
   ensureStoreVersion,
   findSimilar,
@@ -14,8 +16,10 @@ import {
   initializeMemory,
   parseEntries,
   readCatalogue,
+  readCatalogueWithEntries,
   readMemo,
   resolveNotePath,
+  stateFromCatalogue,
   resolveWorkspaceStores,
   restoreEntry,
   searchStores,
@@ -25,8 +29,10 @@ import {
   workspaceAccessError,
   writeNote,
   type MemoryEntry,
+  type NestedScan,
   type Scope,
   type Snapshot,
+  type SnapshotState,
   type StorePaths,
 } from "@seangle/remember-core";
 import { detectMigrations, migrate, type MigrationReport } from "@seangle/remember-migrators";
@@ -125,33 +131,91 @@ export async function statusText(stores: Record<Scope, StorePaths>, config: Reme
       ? `${scope}: ${stat.path} — ${stat.entries} facts, ${stat.notesCount} notes, ${stat.bytes} bytes, ${stat.recoveryCount} recovery file(s)`
       : `${scope}: ${stat.path} — no memory yet${scope === "local" ? "; run memory_init first" : ""}`);
   }
-  const snapshot = await snapshotFor(stores, config, basename(cwd));
-  lines.push(`injected snapshot (current session: ${cwd}): ${snapshot.text.length} chars (global ${snapshot.globalChars}, local ${snapshot.localChars})`);
+  const snapshot = await snapshotFor(stores, config, basename(cwd), cwd);
+  lines.push(`injected snapshot (current session: ${cwd}): ${snapshot.text.length} chars (global ${snapshot.globalChars}, local ${snapshot.localChars}, nested ${snapshot.nestedChars})`);
+  lines.push(`the session keeps its first snapshot and receives later changes as <system_reminder> blocks, ${config.deltaChars} chars each at most`);
   lines.push(`config: dirName=${config.dirName}, autoInject=${config.autoInject ? "on" : "off"}, snapshot budgets global/local ${config.injectCharsGlobal}/${config.injectCharsLocal}`);
+  const scan = config.nested ? await nestedFor(cwd, config) : undefined;
+  if (config.nested) {
+    lines.push(`nested: ${scan?.stores.length ?? 0} bank(s) below ${cwd}, ${scan?.visited ?? 0} directory/ies scanned in ${scan?.ms ?? 0} ms` +
+      `${scan?.truncated === true ? " (scan incomplete: a limit was reached)" : ""}`);
+    for (const store of scan?.stores ?? []) {
+      lines.push(`  ${store.rel} — ${describeCounts(store.facts, store.notes)}, ${store.bytes} bytes (${store.memoryFile})`);
+    }
+  } else {
+    lines.push("nested: off (REMEMBER_NESTED=1 turns it on)");
+  }
   return lines.join("\n");
 }
 
-/** Build the snapshot from both stores; never throws on a missing or invalid store. */
+/** Scan the workspace's children for banks of their own; never throws. */
+export async function nestedFor(cwd: string, config: RememberConfig): Promise<NestedScan | undefined> {
+  if (!config.nested) return undefined;
+  return discoverNestedStores(cwd, {
+    dirName: config.dirName,
+    depth: config.nestedDepth,
+  });
+}
+
+/** What a snapshot is rendered from, and the state a later change is derived from. */
+export interface SnapshotInputs {
+  globalText: string;
+  localText: string;
+  state: SnapshotState;
+  nested?: NestedScan;
+}
+
+/** Read both stores and the nested banks in one pass; never throws on a bad store. */
+export async function readSnapshotInputs(
+  stores: Record<Scope, StorePaths>,
+  config: RememberConfig,
+  cwd: string,
+): Promise<SnapshotInputs> {
+  const read = async (store: StorePaths) => {
+    try {
+      await assertCurrentStoreVersion(store);
+      return await readCatalogueWithEntries(store);
+    } catch {
+      return null;
+    }
+  };
+  const [globalCatalogue, localCatalogue, nested] = await Promise.all([
+    read(stores.global),
+    read(stores.local),
+    nestedFor(cwd, config),
+  ]);
+  const local = localCatalogue ?? { text: "", facts: [], notes: [] };
+  return {
+    globalText: globalCatalogue?.text ?? "",
+    localText: local.text,
+    state: stateFromCatalogue(local, nested),
+    nested,
+  };
+}
+
+/** Render a snapshot from inputs the caller chose: live reads, or a frozen state. */
+export function renderSnapshot(
+  inputs: SnapshotInputs,
+  config: RememberConfig,
+  projectName: string,
+): Snapshot {
+  return buildSnapshot(inputs.globalText, inputs.localText, projectName, {
+    maxGlobalChars: config.injectCharsGlobal,
+    maxLocalChars: config.injectCharsLocal,
+    maxNestedChars: config.injectCharsNested,
+    // Pi wraps a named system-prompt section in <remember> itself.
+    wrap: false,
+  }, inputs.nested);
+}
+
+/** Build the live snapshot from both stores; never throws on a missing or invalid store. */
 export async function snapshotFor(
   stores: Record<Scope, StorePaths>,
   config: RememberConfig,
   projectName: string,
+  cwd: string,
 ): Promise<Snapshot> {
-  const read = async (store: StorePaths) => {
-    try {
-      await assertCurrentStoreVersion(store);
-      return await readCatalogue(store);
-    } catch {
-      return "";
-    }
-  };
-  const [globalText, localText] = await Promise.all([read(stores.global), read(stores.local)]);
-  return buildSnapshot(globalText, localText, projectName, {
-    maxGlobalChars: config.injectCharsGlobal,
-    maxLocalChars: config.injectCharsLocal,
-    // Pi wraps a named system-prompt section in <remember> itself.
-    wrap: false,
-  });
+  return renderSnapshot(await readSnapshotInputs(stores, config, cwd), config, projectName);
 }
 
 /** Map the model-facing tools onto the host-agnostic engine. */

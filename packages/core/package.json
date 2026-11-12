@@ -1,6 +1,6 @@
 {
   "name": "@seangle/remember-core",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Host-agnostic plain-file memory engine: facts, notes, stable memo IDs, search, snapshots, recovery, and migration.",
   "license": "Apache-2.0",
   "author": "Esensats",

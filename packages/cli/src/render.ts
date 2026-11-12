@@ -74,6 +74,14 @@ export function renderSummary(summary: StoreSummary, style: Style): string {
     lines.push(style.warn("  several global stores matched; pass --global-dir to pick one"));
   }
 
+  if (summary.nested.length > 0) {
+    lines.push("");
+    lines.push(`${style.heading("nested")}  ${style.dim(`${summary.nested.length} bank(s) below ${summary.workspace}`)}`);
+    for (const store of summary.nested) {
+      lines.push(`  ${store.rel} — ${store.facts} fact(s), ${store.notes} note(s), ${withCommas(store.bytes)} bytes`);
+    }
+  }
+
   if (summary.snapshots.length > 0) {
     lines.push("");
     for (const snapshot of summary.snapshots) {
@@ -90,7 +98,8 @@ export function renderSummary(summary: StoreSummary, style: Style): string {
 
 function snapshotLine(snapshot: SnapshotInfo, style: Style): string {
   const sizes = `global ${withCommas(snapshot.globalChars)}/${withCommas(snapshot.globalBudget)}, ` +
-    `local ${withCommas(snapshot.localChars)}/${withCommas(snapshot.localBudget)}`;
+    `local ${withCommas(snapshot.localChars)}/${withCommas(snapshot.localBudget)}, ` +
+    `nested ${withCommas(snapshot.nestedChars)}/${withCommas(snapshot.nestedBudget)}`;
   const total = snapshot.chars === 0 ? style.dim("empty") : `${withCommas(snapshot.chars)} chars`;
   return `${style.heading("snapshot")} (${snapshot.globalLabel} + local)  ${total} — ${style.dim(sizes)}`;
 }
@@ -226,13 +235,16 @@ export function summaryJson(summary: StoreSummary): unknown {
     globals: summary.candidates.map(storeJson),
     ambiguousGlobal: summary.ambiguousGlobal,
     globalLabel: summary.globalLabel,
+    nested: summary.nested,
     snapshots: summary.snapshots.map((snapshot) => ({
       global: snapshot.globalLabel,
       chars: snapshot.chars,
       globalChars: snapshot.globalChars,
       localChars: snapshot.localChars,
+      nestedChars: snapshot.nestedChars,
       globalBudget: snapshot.globalBudget,
       localBudget: snapshot.localBudget,
+      nestedBudget: snapshot.nestedBudget,
     })),
     warnings: summary.warnings,
   };
@@ -277,8 +289,10 @@ export function snapshotJson(snapshot: SnapshotInfo): unknown {
     global: snapshot.globalLabel,
     globalChars: snapshot.globalChars,
     localChars: snapshot.localChars,
+    nestedChars: snapshot.nestedChars,
     globalBudget: snapshot.globalBudget,
     localBudget: snapshot.localBudget,
+    nestedBudget: snapshot.nestedBudget,
     warnings: snapshot.warnings,
   };
 }

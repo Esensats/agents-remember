@@ -243,9 +243,24 @@ async function fixture(t: TestContext, options: {
     return (event.systemPromptOptions as { sections: Record<string, string> }).sections;
   }
 
+  /** One provider request: fires `context` and returns the messages it sends. */
+  async function messages(): Promise<{ role: string; content: unknown }[]> {
+    const event: { type: string; messages: { role: string; content: unknown }[] } = { type: "context", messages: [] };
+    const handler = events.get("context");
+    if (handler !== undefined) await handler(event, ctx);
+    return event.messages;
+  }
+
+  /** The change block appended to the last request, or "" when there is none. */
+  async function reminder(): Promise<string> {
+    const sent = await messages();
+    const last = sent.at(-1);
+    return typeof last?.content === "string" && last.role === "custom" ? last.content : "";
+  }
+
   const command = (args: string) => commands.get("memory")!.handler(args, ctx);
 
-  return { base, cwd, other, globalDir, tools, events, commands, sent, notifications, ctx, call, start, prompt, command };
+  return { base, cwd, other, globalDir, tools, events, commands, sent, notifications, ctx, call, start, prompt, messages, reminder, command };
 }
 
 describe("adapter registration", () => {
@@ -405,10 +420,94 @@ describe("prompt injection", () => {
     const second = await f.prompt();
     assert.equal(second.remember, first.remember, "snapshot bytes stay stable between runs");
 
+    // A later write never touches the section: the prefix cache keeps the head,
+    // and the change travels at the end of the next request.
     await f.call("memory_write", { content: "Deploys run from CI only." });
     const third = await f.prompt();
-    assert.notEqual(third.remember, first.remember);
-    assert.match(third.remember, /Deploys run from CI only\./);
+    assert.equal(third.remember, first.remember, "the section is frozen for the session");
+    const reminder = await f.reminder();
+    assert.match(reminder, /^<system_reminder>/);
+    assert.match(reminder, /Deploys run from CI only\./);
+    assert.equal(await f.reminder(), reminder, "the same change renders the same bytes");
+
+    // The request itself is unchanged apart from that tail message.
+    const sentMessages = await f.messages();
+    assert.equal(sentMessages.length, 1);
+    assert.equal(sentMessages[0].role, "custom", "a context message, not the person's words");
+  });
+
+  test("the frozen section never grows, and every change reaches the tail", async (t) => {
+    const f = await fixture(t);
+    await f.start();
+    await f.call("memory_init", {});
+    await f.call("memory_write", { content: "The release train leaves on Thursday." });
+    const base = (await f.prompt()).remember;
+    assert.match(base, /release train leaves on Thursday/);
+    assert.equal(await f.reminder(), "", "nothing changed since the freeze");
+
+    await f.call("memory_store", { title: "Playbook note", content: "steps" });
+    await f.call("memory_write", { content: "Staging runs on the small host." });
+    assert.equal((await f.prompt()).remember, base);
+    const reminder = await f.reminder();
+    assert.match(reminder, /Playbook note/);
+    assert.match(reminder, /Staging runs on the small host/);
+    assert.doesNotMatch(reminder, /release train leaves on Thursday/, "unchanged facts are not repeated");
+    assert.ok(reminder.length <= 900);
+  });
+
+  test("a global-scope change is named in the tail, not rewritten at the head", async (t) => {
+    const f = await fixture(t);
+    await f.start();
+    await f.call("memory_init", {});
+    await f.call("memory_write", { content: "Workspace fact stays local." });
+    const base = (await f.prompt()).remember;
+
+    await f.call("memory_write", { scope: "global", content: "The owner uses a Linux host." });
+    assert.equal((await f.prompt()).remember, base, "the section is unchanged");
+    assert.match(await f.reminder(), /global memory changed/);
+  });
+
+  test("nested banks of child workspaces are listed, never merged", async (t) => {
+    const f = await fixture(t, {
+      before: async ({ cwd }) => {
+        await mkdir(join(cwd, "repos", "petri", ".agents", "memory", "notes"), { recursive: true });
+        await writeFile(join(cwd, "repos", "petri", ".agents", "memory", "remember.json"), '{\n  "version": 1\n}\n');
+        await writeFile(
+          join(cwd, "repos", "petri", ".agents", "memory", "MEMORY.md"),
+          "<!-- 2026-11-01T10:00:00Z [abcdabcd] -->\nThe petri dish uses a fixed seed.\n",
+        );
+        await writeFile(join(cwd, "repos", "petri", ".agents", "memory", "notes", "2026-11-01-run.md"), "body\n");
+      },
+    });
+    await f.start();
+    await f.call("memory_init", {});
+    await f.call("memory_write", { content: "The parent workspace keeps its own facts." });
+    const section = (await f.prompt()).remember ?? "";
+    assert.match(section, /## Nested workspace memory/);
+    assert.match(section, /- repos\/petri — 1 fact, 1 note/);
+    assert.match(section, /memory_read\{root\}/);
+    assert.doesNotMatch(section, /fixed seed/, "a child's facts stay out of the parent snapshot");
+
+    const status = success(await f.call("memory_status", {}));
+    assert.match(status, /nested: 1 bank\(s\) below/);
+    assert.match(status, /repos\/petri — 1 fact, 1 note/);
+    assert.match(status, /nested 111\)/);
+  });
+
+  test("nested discovery can be turned off", async (t) => {
+    const f = await fixture(t, {
+      env: { REMEMBER_NESTED: "0" },
+      before: async ({ cwd }) => {
+        await mkdir(join(cwd, "petri", ".agents", "memory"), { recursive: true });
+        await writeFile(join(cwd, "petri", ".agents", "memory", "MEMORY.md"), "fact\n");
+      },
+    });
+    await f.start();
+    await f.call("memory_init", {});
+    await f.call("memory_write", { content: "Only the workspace is listed." });
+    const section = (await f.prompt()).remember ?? "";
+    assert.doesNotMatch(section, /Nested workspace memory/);
+    assert.match(success(await f.call("memory_status", {})), /nested: off/);
   });
 
   test("autoInject off leaves the prompt untouched", async (t) => {
@@ -450,10 +549,14 @@ describe("legacy stores", () => {
     });
 
     await f.start();
+    // The notice is not memory: it rides at the end with the change block, so
+    // the section stays empty until the store itself has content.
     const first = await f.prompt();
-    assert.match(first.remember, /<remember-migration>/);
-    assert.match(first.remember, /\.pi\/memory/);
-    assert.doesNotMatch(first.remember, /Legacy fact/, "unmigrated stores are not injected");
+    assert.equal(first.remember, undefined);
+    const notice = await f.reminder();
+    assert.match(notice, /<remember-migration>/);
+    assert.match(notice, /\.pi\/memory/);
+    assert.doesNotMatch(notice, /Legacy fact/, "unmigrated stores are not injected");
 
     const dry = success(await f.call("memory_migrate", { dryRun: true }));
     assert.match(dry, /Dry run/);
@@ -467,9 +570,10 @@ describe("legacy stores", () => {
     assert.match(await readFile(join(f.cwd, legacy, "MEMORY.md"), "utf8"), /Legacy fact\./, "source is left intact");
 
     const second = await f.prompt();
-    assert.doesNotMatch(second.remember, /<remember-migration>/, "notice is shown once per session");
-    assert.match(second.remember, /Legacy fact\./);
-    assert.match(second.remember, /Legacy note/);
+    assert.doesNotMatch(second.remember ?? "", /<remember-migration>/, "notice is shown once per session");
+    assert.match(second.remember ?? "", /Legacy fact\./);
+    assert.match(second.remember ?? "", /Legacy note/);
+    assert.equal(await f.reminder(), "", "the first real snapshot carries no change block");
   });
 
   test("adopts a copied legacy tree in place, marker only", async (t) => {
@@ -487,8 +591,8 @@ describe("legacy stores", () => {
     assert.equal(f.notifications.length, 1);
     assert.match(f.notifications[0].message, /local memory unavailable/);
     const first = await f.prompt();
-    assert.match(first.remember, /<remember-migration>/, "in-place copy is offered, not silently adopted");
-    assert.doesNotMatch(first.remember, /Copied fact/);
+    assert.equal(first.remember, undefined);
+    assert.match(await f.reminder(), /<remember-migration>/, "in-place copy is offered, not silently adopted");
 
     const report = success(await f.call("memory_migrate", {}));
     assert.match(report, /Migrated in place/);
@@ -496,8 +600,8 @@ describe("legacy stores", () => {
     assert.match(await readFile(memoryFile(f.cwd), "utf8"), /Copied fact\./);
 
     const second = await f.prompt();
-    assert.doesNotMatch(second.remember, /<remember-migration>/);
-    assert.match(second.remember, /Copied fact\./);
+    assert.doesNotMatch(second.remember ?? "", /<remember-migration>/);
+    assert.match(second.remember ?? "", /Copied fact\./);
   });
 
   test("memory_migrate refuses an already initialized target and reports missing sources", async (t) => {

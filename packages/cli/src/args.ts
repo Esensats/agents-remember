@@ -33,6 +33,9 @@ export interface CliArgs {
   limit: number;
   wrap: boolean;
   stats: boolean;
+  /** Include nested banks in the snapshot and the summary. */
+  nested: boolean;
+  nestedDepth: number;
 }
 
 const COMMANDS = new Set<CommandName>([
@@ -77,6 +80,8 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv = process.env):
   let limit = 20;
   let wrap = true;
   let stats = false;
+  let nested = true;
+  let nestedDepth = 2;
   let helpFlag = false;
   let versionFlag = false;
   let flagsDone = false;
@@ -99,6 +104,15 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv = process.env):
     if (arg === "--no-color") { color = false; index += 1; continue; }
     if (arg === "--no-wrap") { wrap = false; index += 1; continue; }
     if (arg === "--stats") { stats = true; index += 1; continue; }
+    if (arg === "--no-nested") { nested = false; index += 1; continue; }
+    if (arg === "--nested-depth" || arg.startsWith("--nested-depth=")) {
+      const parsed = value(argv, index, "--nested-depth");
+      const depth = Number.parseInt(parsed.value, 10);
+      if (!Number.isFinite(depth) || depth < 1 || depth > 8) throw new UsageError("--nested-depth must be 1 to 8.");
+      nestedDepth = depth;
+      index = parsed.next;
+      continue;
+    }
     if (arg === "--scope" || arg.startsWith("--scope=")) {
       const parsed = value(argv, index, "--scope");
       if (!isScope(parsed.value)) throw new UsageError(`--scope must be global, local or both, not ${JSON.stringify(parsed.value)}.`);
@@ -145,5 +159,5 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv = process.env):
   const required = REQUIRED_POSITIONAL[command];
   if (required && !rest[0]) throw new UsageError(`remember ${command} needs ${required}.`);
 
-  return { command, positional: rest, scope, root, globalDir, dirName, json, color, limit, wrap, stats };
+  return { command, positional: rest, scope, root, globalDir, dirName, json, color, limit, wrap, stats, nested, nestedDepth };
 }

@@ -3,10 +3,10 @@ import { readdir, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, isAbsolute, join, resolve, sep } from "node:path";
 import {
-  assertCurrentStoreVersion, buildSnapshot, entryId, noteReference, parseEntries, parseMemoId,
+  assertCurrentStoreVersion, buildSnapshot, describeCounts, discoverNestedStores, entryId, noteReference, parseEntries, parseMemoId,
   parseNote, readCatalogue, readMemo, readMemoryText, readNotes, readStoreVersion, resolveNotePath,
   resolveStores, searchStores, statMemory, storeHasContent,
-  type MemoryEntry, type NoteMetadata, type Scope, type SearchHit, type StorePaths,
+  type MemoryEntry, type NestedScan, type NoteMetadata, type Scope, type SearchHit, type StorePaths,
 } from "@seangle/remember-core";
 import type { ScopeFilter } from "./args.ts";
 
@@ -105,7 +105,9 @@ export interface Context {
   candidates: CandidateStatus[];
   /** Store record accepted by core: global falls back to an absent path. */
   stores: Record<Scope, StorePaths>;
-  budgets: { global: number; local: number };
+  budgets: { global: number; local: number; nested: number };
+  /** Nested-bank discovery, as the adapters run it. */
+  nested: { on: boolean; depth: number };
 }
 
 function canonicalRoot(cwd: string, root: string | undefined, home: string): string {
@@ -137,6 +139,11 @@ export function createContext(
   const budgets = {
     global: intFromEnv(env, "REMEMBER_INJECT_CHARS_GLOBAL", 3000),
     local: intFromEnv(env, "REMEMBER_INJECT_CHARS_LOCAL", 3000),
+    nested: intFromEnv(env, "REMEMBER_INJECT_CHARS_NESTED", 600),
+  };
+  const nested = {
+    on: env.REMEMBER_NESTED === undefined || !["0", "false", "no", "off"].includes(env.REMEMBER_NESTED.trim().toLowerCase()),
+    depth: Math.min(8, intFromEnv(env, "REMEMBER_NESTED_DEPTH", 2)),
   };
 
   const sameDirectory = (left: string, right: string): boolean => resolve(left) === resolve(right);
@@ -152,7 +159,7 @@ export function createContext(
     return {
       root, dirName: options.dirName, local,
       global: paths, globalLabel: "global", ambiguousGlobal: false, explicitGlobal: true,
-      candidates: [candidate], stores: { local, global: paths }, budgets,
+      candidates: [candidate], stores: { local, global: paths }, budgets, nested,
     };
   }
 
@@ -173,7 +180,7 @@ export function createContext(
     ambiguousGlobal: present.length > 1, explicitGlobal: false,
     candidates,
     stores: { local, global: chosen?.paths ?? absentStore("global", root, options.dirName) },
-    budgets,
+    budgets, nested,
   };
 }
 
@@ -205,8 +212,10 @@ export interface SnapshotInfo {
   chars: number;
   globalChars: number;
   localChars: number;
+  nestedChars: number;
   globalBudget: number;
   localBudget: number;
+  nestedBudget: number;
   warnings: string[];
 }
 
@@ -223,29 +232,50 @@ async function catalogueFor(store: StorePaths, label: string): Promise<{ text: s
   }
 }
 
+/** Child workspaces that keep a bank of their own, as the adapters find them. */
+export async function nestedFor(ctx: Context): Promise<NestedScan | undefined> {
+  if (!ctx.nested.on) return undefined;
+  return discoverNestedStores(ctx.root, { dirName: ctx.dirName, depth: ctx.nested.depth });
+}
+
+/** One line per nested bank, for the summary view. */
+export function nestedLines(scan: NestedScan | undefined): string[] {
+  if (scan === undefined) return [];
+  if (scan.stores.length === 0) return [];
+  const lines = [`nested banks: ${scan.stores.length} (scanned ${scan.visited} directory/ies in ${scan.ms} ms)`];
+  for (const store of scan.stores) {
+    lines.push(`  ${store.rel} — ${describeCounts(store.facts, store.notes)}, ${store.bytes} bytes`);
+  }
+  return lines;
+}
+
 export async function snapshotFor(
   ctx: Context,
   globalPaths: StorePaths | null,
   globalLabel: string,
   wrap: boolean,
 ): Promise<SnapshotInfo> {
-  const [global, local] = await Promise.all([
+  const [global, local, nested] = await Promise.all([
     globalPaths ? catalogueFor(globalPaths, globalLabel) : Promise.resolve({ text: "", warning: null }),
     catalogueFor(ctx.local, "local"),
+    nestedFor(ctx),
   ]);
   const snapshot = buildSnapshot(global.text, local.text, basename(ctx.root), {
     maxGlobalChars: ctx.budgets.global,
     maxLocalChars: ctx.budgets.local,
+    maxNestedChars: ctx.budgets.nested,
     wrap,
-  });
+  }, nested);
   return {
     globalLabel,
     text: snapshot.text,
     chars: snapshot.text.length,
     globalChars: snapshot.globalChars,
     localChars: snapshot.localChars,
+    nestedChars: snapshot.nestedChars,
     globalBudget: ctx.budgets.global,
     localBudget: ctx.budgets.local,
+    nestedBudget: ctx.budgets.nested,
     warnings: [global.warning, local.warning].filter((warning): warning is string => warning !== null),
   };
 }
@@ -294,6 +324,8 @@ export interface StoreSummary {
   ambiguousGlobal: boolean;
   globalLabel: string | null;
   snapshots: SnapshotInfo[];
+  /** Child workspaces with a bank of their own, when discovery is on. */
+  nested: { rel: string; facts: number; notes: number; bytes: number }[];
   warnings: string[];
 }
 
@@ -313,6 +345,7 @@ export async function summarize(ctx: Context, wrap = true): Promise<StoreSummary
     : present.filter((candidate) => candidate.label === ctx.globalLabel);
   const snapshots = await Promise.all(targets.map((candidate) =>
     snapshotFor(ctx, candidate.paths, candidate.label, wrap)));
+  const scan = await nestedFor(ctx);
   const warnings = [local, ...candidates].flatMap(storeWarning);
   if (ctx.ambiguousGlobal) {
     warnings.push(`several global stores found (${present.map((candidate) => candidate.label).join(", ")}); scoped commands need --global-dir`);
@@ -320,7 +353,11 @@ export async function summarize(ctx: Context, wrap = true): Promise<StoreSummary
   return {
     workspace: ctx.root, dirName: ctx.dirName, local, candidates,
     ambiguousGlobal: ctx.ambiguousGlobal, globalLabel: ctx.globalLabel,
-    snapshots, warnings,
+    snapshots,
+    nested: (scan?.stores ?? []).map((store) => ({
+      rel: store.rel, facts: store.facts, notes: store.notes, bytes: store.bytes,
+    })),
+    warnings,
   };
 }
 
