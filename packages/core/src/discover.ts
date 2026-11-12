@@ -312,7 +312,10 @@ export function formatNestedStores(
 ): string {
   const stores = scan.stores.slice(0, options.maxStores ?? scan.stores.length);
   if (stores.length === 0) return "";
-  const header = "## Nested workspace memory (not included above; read one with memory_read{root})" +
+  // Plain sentences, no tool shorthand: the same text reaches every host's prompt.
+  const header = "## Nested workspace memory\n" +
+    "Not included above. Pass one of these directories as root to a memory tool to read there, or to keep new " +
+    "knowledge there." +
     (scan.truncated ? " [scan incomplete]" : "");
   const lines = stores.map((store) => `- ${store.rel} — ${describeCounts(store.facts, store.notes)}`);
   const more = (omitted: number) => `- +${omitted} more (memory_status)`;

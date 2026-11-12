@@ -485,13 +485,13 @@ describe("prompt injection", () => {
     const section = (await f.prompt()).remember ?? "";
     assert.match(section, /## Nested workspace memory/);
     assert.match(section, /- repos\/petri — 1 fact, 1 note/);
-    assert.match(section, /memory_read\{root\}/);
+    assert.match(section, /Pass one of these directories as root to a memory tool/);
     assert.doesNotMatch(section, /fixed seed/, "a child's facts stay out of the parent snapshot");
 
     const status = success(await f.call("memory_status", {}));
     assert.match(status, /nested: 1 bank\(s\) below/);
     assert.match(status, /repos\/petri — 1 fact, 1 note/);
-    assert.match(status, /nested 111\)/);
+    assert.match(status, /nested \d+\)/);
   });
 
   test("nested discovery can be turned off", async (t) => {

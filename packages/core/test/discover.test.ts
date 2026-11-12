@@ -207,7 +207,8 @@ test("format: one line per bank under a two-line header", () => {
     ms: 3,
   }, { maxChars: 600 });
   assert.match(text, /^## Nested workspace memory/);
-  assert.match(text, /memory_read\{root\}/);
+  assert.match(text, /Pass one of these directories as root to a memory tool/);
+  assert.doesNotMatch(text, /memory_read\{root\}|memory_\w+\{/, "no tool shorthand");
   assert.match(text, /- repos\/a — 52 facts, 23 notes/);
   assert.match(text, /- repos\/b — 1 fact, 0 notes/);
   assert.doesNotMatch(text, /ms/);
@@ -224,7 +225,7 @@ test("format: whole lines only, and the omitted count is reported", () => {
   }));
   const text = formatNestedStores({ stores, visited: 20, truncated: false, ms: 4 }, { maxChars: 260 });
   assert.ok(text.length <= 260);
-  for (const line of text.split("\n").slice(1)) {
+  for (const line of text.split("\n").slice(2)) {
     assert.match(line, /^- /, "no line is cut in half");
   }
   assert.match(text, /\+[1-9]\d* more \(memory_status\)$/);
