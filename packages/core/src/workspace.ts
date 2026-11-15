@@ -11,7 +11,6 @@ type WorkspaceResult =
 type InitializationResult =
   | { status: "initialized" | "existing" }
   | { status: "error"; message: string };
-
 // StorePaths intentionally has no workspace field. Retain the exact root even
 // for nested configDirName values without changing that shared store contract.
 const workspaceRoots = new WeakMap<StorePaths, string>();
@@ -78,6 +77,29 @@ export function workspaceAccessError(
   if (!scopes.includes("local")) return null;
   return canonicalRootError(stores.local) ??
     (requireInitialized ? initializationError(stores, scopes) : null);
+}
+
+/**
+ * The guard a mutation runs inside its queue: optionally create the project
+ * store first, then report every reason the write cannot proceed.
+ *
+ * Auto-initialization removes the two-step dance an agent otherwise needs
+ * (`memory_init`, then the write) in every workspace that has no store yet —
+ * which is most of them — without ever touching an existing store: creation is
+ * exclusive, so concurrent writers and an established store both win over it.
+ * Global memory is never initialized here; it needs no marker.
+ */
+export async function prepareWriteTarget(
+  stores: Record<Scope, StorePaths>,
+  scope: Scope,
+  options: { autoInit?: boolean } = {},
+): Promise<string | null> {
+  const autoInit = options.autoInit === true && scope === "local";
+  if (autoInit) {
+    const created = await initializeMemory(stores[scope]);
+    if (created.status === "error") return created.message;
+  }
+  return workspaceAccessError(stores, [scope], !autoInit);
 }
 
 /** Tool-boundary guard only: low-level reads may still treat missing memory as empty. */

@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.5.0
+
+### Changed
+
+- The tool descriptions, their parameter notes and the system-prompt guidelines
+  are shared with the other adapters (`@seangle/remember-core` `text.ts`) and
+  shortened: about 1,080 fewer input tokens per request, a 35% cut of the memory
+  tool pack, with no lost capability.
+- The guidelines now say when to write, instead of only when not to. The pack's
+  only write rule used to be "use memory_write sparingly … when in doubt, do not
+  write"; it is replaced by a trigger (a corrected assumption, a convention, a
+  working command, a decision with its reason, a quirk that cost a detour) and a
+  quality bar that keeps repository statements and session state out.
+- The `## Nested workspace memory` header states the trigger and the exact call.
+  Pi also announces a child bank just in time: a tool call that touches a path
+  inside one appends a single `<system_reminder>` naming the bank, once per
+  session, and the notice disappears after `memory_read({root})` reads it.
+- A workspace with no store gets a one-paragraph cue in the `remember` section,
+  naming `memory_write` and `memory_store`. An unreadable store never gets it.
+
+### Added
+
+- `REMEMBER_AUTO_INIT` (default `1`): the first write creates the local store, so
+  a tentative write no longer fails in a workspace that was never initialized.
+  Set it to `0` to require `memory_init` again.
+
+### Fixed
+
+- Reading memory no longer fails in an uninitialized workspace. A default
+  `memory_read` or `memory_search` used to return "Local memory is not
+  initialized" — hiding global memory and every earlier fact — while another
+  guideline said not to initialize merely to make a search succeed.
+- `memory_status` says "the first write creates it" instead of pointing at
+  `memory_init` when auto-initialization is on.
+
 ## 0.4.0
 
 ### Changed

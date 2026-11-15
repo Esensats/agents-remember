@@ -23,6 +23,12 @@ export interface RememberConfig {
   injectCharsNested: number;
   /** Budget of one `<system_reminder>` block that carries a later change. */
   deltaChars: number;
+  /**
+   * Create the project store on the first write instead of requiring
+   * `memory_init` first. Most workspaces have no store, and a write that fails
+   * there teaches the model not to try again.
+   */
+  autoInit: boolean;
 }
 
 function truthy(value: string | undefined): boolean {
@@ -59,6 +65,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): RememberConfig
     nestedDepth: Math.min(8, intEnv(env, "REMEMBER_NESTED_DEPTH", 2)),
     injectCharsNested: intEnv(env, "REMEMBER_INJECT_CHARS_NESTED", 600),
     deltaChars: intEnv(env, "REMEMBER_DELTA_CHARS", 900),
+    autoInit: !falsy(env.REMEMBER_AUTO_INIT),
   };
 }
 

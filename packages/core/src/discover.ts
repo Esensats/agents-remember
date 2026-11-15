@@ -1,6 +1,7 @@
 import { opendir, open, readdir, stat } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 import { parseEntries } from "./store.ts";
+import { NESTED_SECTION_HEADER } from "./text.ts";
 
 /**
  * Discovery of nested workspaces that keep their own memory bank.
@@ -313,9 +314,7 @@ export function formatNestedStores(
   const stores = scan.stores.slice(0, options.maxStores ?? scan.stores.length);
   if (stores.length === 0) return "";
   // Plain sentences, no tool shorthand: the same text reaches every host's prompt.
-  const header = "## Nested workspace memory\n" +
-    "Not included above. Pass one of these directories as root to a memory tool to read there, or to keep new " +
-    "knowledge there." +
+  const header = "## Nested workspace memory\n" + NESTED_SECTION_HEADER +
     (scan.truncated ? " [scan incomplete]" : "");
   const lines = stores.map((store) => `- ${store.rel} — ${describeCounts(store.facts, store.notes)}`);
   const more = (omitted: number) => `- +${omitted} more (memory_status)`;

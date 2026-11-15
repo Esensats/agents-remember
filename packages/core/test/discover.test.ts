@@ -196,7 +196,7 @@ test("format: empty scan renders nothing", () => {
   assert.equal(formatNestedStores({ stores: [], visited: 3, truncated: false, ms: 1 }, { maxChars: 600 }), "");
 });
 
-test("format: one line per bank under a two-line header", () => {
+test("format: one line per bank under a header that says when to read one", () => {
   const text = formatNestedStores({
     stores: [
       { root: "/w/repos/a", rel: "repos/a", memoryFile: "/w/repos/a/.agents/memory/MEMORY.md", facts: 52, notes: 23, bytes: 6825 },
@@ -207,8 +207,10 @@ test("format: one line per bank under a two-line header", () => {
     ms: 3,
   }, { maxChars: 600 });
   assert.match(text, /^## Nested workspace memory/);
-  assert.match(text, /Pass one of these directories as root to a memory tool/);
-  assert.doesNotMatch(text, /memory_read\{root\}|memory_\w+\{/, "no tool shorthand");
+  // The header is an instruction, not a syntax note: it names the trigger and
+  // the exact call. Every adapter registers the same tool names, so one example
+  // serves all hosts.
+  assert.match(text, /read its bank with memory_read\(\{root: "<path>"\}\)/);
   assert.match(text, /- repos\/a — 52 facts, 23 notes/);
   assert.match(text, /- repos\/b — 1 fact, 0 notes/);
   assert.doesNotMatch(text, /ms/);
@@ -223,8 +225,10 @@ test("format: whole lines only, and the omitted count is reported", () => {
     notes: 1,
     bytes: 100,
   }));
-  const text = formatNestedStores({ stores, visited: 20, truncated: false, ms: 4 }, { maxChars: 260 });
-  assert.ok(text.length <= 260);
+  // The header is an instruction now, so a realistic budget is larger; what the
+  // test guards is that a path is never cut in half and the rest is counted.
+  const text = formatNestedStores({ stores, visited: 20, truncated: false, ms: 4 }, { maxChars: 420 });
+  assert.ok(text.length <= 420);
   for (const line of text.split("\n").slice(2)) {
     assert.match(line, /^- /, "no line is cut in half");
   }

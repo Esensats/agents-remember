@@ -65,8 +65,13 @@ baseline advances so the next block holds only what is new. Facts and a derived
 note catalogue ride in context; note bodies stay on disk until read or searched.
 Each scope has a default 3,000-character budget, with middle truncation for large
 stores. Child workspaces with a bank of their own are listed under
-`## Nested workspace memory` (path and counts only, never their facts); their
-number is bounded by a depth-limited, cached walk.
+`## Nested workspace memory` (path and counts only, never their facts); read one
+with `memory_read({root: "<path>"})`. Their number is bounded by a
+depth-limited, cached walk.
+
+A workspace whose project store does not exist yet gets a short cue in place of
+the snapshot: it says no memory exists there, and that the first fact is worth
+saving. An initialized but empty store injects nothing.
 
 The workspace is the **session's** directory, not the plugin's load location, so
 `session_move` and worktrees resolve to their own local store.
@@ -83,9 +88,9 @@ history.
 
 | Tool | Purpose | Default scope |
 |---|---|---|
-| `memory_init` | Explicitly initialize local memory in an existing workspace | local |
-| `memory_write` | Append one durable fact, at most 300 characters | local |
-| `memory_store` | Store a Markdown note; `title` means its short description | local |
+| `memory_init` | Create an empty project store on purpose | local |
+| `memory_write` | Save one durable fact, at most 300 characters | local |
+| `memory_store` | Save a Markdown note; `title` means its short description | local |
 | `memory_read` | Read facts/catalogue, filter, or fetch a memo by ID/path | both |
 | `memory_search` | Ranked lexical search over facts and note bodies | both |
 | `memory_update` | Replace one memo's content, preserving identity and path | local |
@@ -94,11 +99,14 @@ history.
 | `memory_status` | Inspect paths, counts, configuration, and snapshot size | both |
 | `memory_migrate` | Explicitly migrate a supported legacy store | explicit paths or local defaults |
 
-Local reads and writes require an initialized store. Global memory needs no
-explicit initialization. Optional `root` selects another existing workspace's
-local memory for that call; it does not change the session workspace or global
-memory. A memo ID identifies knowledge; a recovery ID identifies an undo record.
-Read before updating and preserve unrelated content.
+Reads work before a project store exists: a missing store reads as empty, and
+global memory stays visible. Writing does not need `memory_init` either: the
+first write creates the project store and marks it. Set `autoInit: false` to
+require `memory_init` again. Global memory needs no initialization. Optional
+`root` selects another existing workspace's local memory for that call; it does
+not change the session workspace or global memory. A memo ID identifies
+knowledge; a recovery ID identifies an undo record. Read before updating and
+preserve unrelated content.
 
 The tools are registered under the `memory` namespace, so the effective tool
 names stay `memory_*` while Code Mode reaches them as `tools.memory.init`,
@@ -130,9 +138,11 @@ Plugin options in `opencode.json(c)`:
 | `injectCharsGlobal` | `3000` |
 | `injectCharsLocal` | `3000` |
 | `autoInject` | `true` |
+| `autoInit` | `true` — the first write creates the project store |
 
 Budgets must be positive numbers; invalid values fall back to the default. Set
-`autoInject: false` to disable injection, not the tools. Configuration is read
+`autoInject: false` to disable injection, not the tools. Set `autoInit: false`
+to require `memory_init` before the first write. Configuration is read
 when the plugin loads; OpenCode reloads plugins after a config save.
 
 ## Concurrency and safety

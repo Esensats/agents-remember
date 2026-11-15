@@ -17,11 +17,16 @@ import {
   parseEntries,
   readCatalogue,
   readCatalogueWithEntries,
+  prepareWriteTarget,
   readMemo,
   resolveNotePath,
   stateFromCatalogue,
   resolveWorkspaceStores,
   restoreEntry,
+  ROOT_PARAMETER_TEXT,
+  SCOPE_READ_TEXT,
+  SCOPE_WRITE_TEXT,
+  TOOL_COPY,
   searchStores,
   statMemory,
   updateMemo,
@@ -62,19 +67,16 @@ type MutationQueue = <T>(path: string, operation: () => Promise<T>) => Promise<T
 
 const ROOT_PARAMETER = Type.Optional(Type.String({
   minLength: 1,
-  description: "Workspace directory for local memory (not its .agents directory). Defaults to the session working directory; accepts absolute, relative-to-cwd, and ~/ paths. Ignored for global-only operations.",
+  description: ROOT_PARAMETER_TEXT,
 }));
 
 const SCOPE_WRITE = Type.Optional(StringEnum(["local", "global"] as const, {
-  description: "local = this workspace; global = user/machine facts. Defaults to local.",
+  description: SCOPE_WRITE_TEXT,
 }));
 
 const SCOPE_READ = Type.Optional(StringEnum(["local", "global", "both"] as const, {
-  description: "Which stores to read. Defaults to both.",
+  description: SCOPE_READ_TEXT,
 }));
-
-const WORKSPACE_GUIDANCE =
-  " Optional root selects another workspace's local memory; global memory is unchanged. Local memory requires memory_init first.";
 
 function resolveScopes(param: string | undefined): Scope[] {
   if (param === "global") return ["global"];
@@ -129,7 +131,7 @@ export async function statusText(stores: Record<Scope, StorePaths>, config: Reme
     const stat = await statMemory(stores[scope]);
     lines.push(stat.exists
       ? `${scope}: ${stat.path} — ${stat.entries} facts, ${stat.notesCount} notes, ${stat.bytes} bytes, ${stat.recoveryCount} recovery file(s)`
-      : `${scope}: ${stat.path} — no memory yet${scope === "local" ? "; run memory_init first" : ""}`);
+      : `${scope}: ${stat.path} — no memory yet${scope === "local" ? (config.autoInit ? "; the first write creates it" : "; run memory_init first") : ""}`);
   }
   const snapshot = await snapshotFor(stores, config, basename(cwd), cwd);
   lines.push(`injected snapshot (current session: ${cwd}): ${snapshot.text.length} chars (global ${snapshot.globalChars}, local ${snapshot.localChars}, nested ${snapshot.nestedChars})`);
@@ -221,7 +223,6 @@ export async function snapshotFor(
 /** Map the model-facing tools onto the host-agnostic engine. */
 export function toolSpecs(ctx: ToolContext) {
   const queue: MutationQueue = (path, operation) => withFileMutationQueue(path, operation);
-  const memoryDir = join("<workspace>", ctx.config.dirName, "memory");
 
   /** Resolve stores for one call without changing the session's injected memory. */
   const targetStores = (root: string | undefined, scopes: Scope[], exec: ToolExec) =>
@@ -237,7 +238,9 @@ export function toolSpecs(ctx: ToolContext) {
     requireInit = true,
   ): Promise<{ status: "ok"; value: T } | { status: "error"; message: string }> => {
     return queue(stores[scope].memoryFile, async () => {
-      const error = workspaceAccessError(stores, [scope], requireInit);
+      const error = requireInit
+        ? await prepareWriteTarget(stores, scope, { autoInit: ctx.config.autoInit })
+        : workspaceAccessError(stores, [scope], false);
       if (error) return { status: "error" as const, message: error };
       try {
         // Mark a brand-new store before the first write, otherwise the
@@ -252,10 +255,12 @@ export function toolSpecs(ctx: ToolContext) {
     });
   };
 
-  /** Reads of other workspaces validate and migrate lazily; missing stores stay missing. */
+  /** Reads validate lazily; a store that does not exist yet reads as empty, not as an error. */
   const prepareReads = async (stores: Record<Scope, StorePaths>, scopes: Scope[]): Promise<string | null> => {
     for (const scope of scopes) {
-      const error = workspaceAccessError(stores, [scope]);
+      // Read access only needs a sound workspace root: an uninitialized project
+      // store must not hide global memory or block a first search.
+      const error = workspaceAccessError(stores, [scope], false);
       if (error) return error;
       try {
         await queue(stores[scope].memoryFile, () => assertCurrentStoreVersion(stores[scope]));
@@ -285,12 +290,9 @@ export function toolSpecs(ctx: ToolContext) {
     {
       name: "memory_init",
       label: "Memory Init",
-      description:
-        `Explicitly initialize local memory in an existing workspace. Optional root defaults to the session working directory. Creates ${memoryDir}/MEMORY.md only if missing; never overwrites existing memory or creates the workspace itself. Global memory needs no initialization.`,
-      promptSnippet: "Initialize local memory in an existing workspace",
-      promptGuidelines: [
-        "Use root to access local memory in another workspace. Initialize it with memory_init only when you intend to create a memory store there; do not initialize merely to make a search succeed.",
-      ],
+      description: TOOL_COPY.memory_init.description,
+      promptSnippet: TOOL_COPY.memory_init.promptSnippet,
+      promptGuidelines: [...TOOL_COPY.memory_init.promptGuidelines],
       parameters: Type.Object({ root: ROOT_PARAMETER }),
       async execute(args: { root?: string }, exec: ToolExec): Promise<ToolResult> {
         const target = targetStores(args.root, ["local"], exec);
@@ -310,21 +312,9 @@ export function toolSpecs(ctx: ToolContext) {
     {
       name: "memory_write",
       label: "Memory Write",
-      description:
-        `Append exactly ONE concise, durable fact to memory. Default scope 'local' (this workspace, ${ctx.config.dirName}/memory/MEMORY.md). ` +
-        "Use scope 'global' ONLY for machine/user-wide facts (identity, OS, global tool preferences). " +
-        "Store only knowledge that was expensive to obtain and will plausibly matter in a FUTURE session: stable preferences, decisions, lessons, environment quirks. " +
-        "NEVER store temporary session state: current task, todos, in-progress work, debugging state, 'user asked me to X'. " +
-        "One line only, max 300 chars. For longer content use memory_store, which writes a standalone note." +
-        WORKSPACE_GUIDANCE,
-      promptSnippet: "Persist one durable fact to memory (project-local or global)",
-      promptGuidelines: [
-        "Use memory_write sparingly — only for facts a future session will plausibly need. When in doubt, don't write.",
-        "global scope is reserved for facts about the user or the machine; facts about specific software, repos, or configs stay local to the workdir where they were learned.",
-        "Do not record session state (what you're doing now, todos, next steps) — pi's own session files persist that.",
-        "Keep MEMORY.md for one-line facts only. Notes carry their own metadata; their descriptions are automatically included in session context.",
-        "Use memory_search to recall stored knowledge before re-deriving it or asking the user.",
-      ],
+      description: TOOL_COPY.memory_write.description,
+      promptSnippet: TOOL_COPY.memory_write.promptSnippet,
+      promptGuidelines: [...TOOL_COPY.memory_write.promptGuidelines],
       parameters: Type.Object({
         content: Type.String({ description: "Single fact to remember (one line, max 300 chars)." }),
         scope: SCOPE_WRITE,
@@ -352,17 +342,8 @@ export function toolSpecs(ctx: ToolContext) {
     {
       name: "memory_store",
       label: "Memory Store Note",
-      description:
-        "Store detailed knowledge as a standalone Markdown note with description, ID and timestamps in frontmatter. " +
-        "Only note descriptions/IDs/paths enter context; bodies are read on demand via memory_read. " +
-        "Filenames always prepend the UTC date; no Markdown heading is added. Default scope 'local'. " +
-        "Existing/duplicate entries are returned without creating or overwriting a note; use memory_update to revise an indexed memo." +
-        WORKSPACE_GUIDANCE,
-      promptSnippet: "Store detailed knowledge as a dated, self-describing note",
-      promptGuidelines: [
-        "Use memory_store instead of memory_write whenever knowledge needs more than one line. MEMORY.md holds only short facts; notes are discovered from frontmatter.",
-        "When recalling, prefer memory_search to find notes, then memory_read(path=...) to fetch the full note.",
-      ],
+      description: TOOL_COPY.memory_store.description,
+      promptSnippet: TOOL_COPY.memory_store.promptSnippet,
       parameters: Type.Object({
         title: Type.String({ description: "Short note description stored in frontmatter and injected into context (max 300 chars). Not a heading." }),
         content: Type.String({ description: "Markdown body only; no frontmatter. Include your own heading if useful." }),
@@ -398,13 +379,8 @@ export function toolSpecs(ctx: ToolContext) {
     {
       name: "memory_update",
       label: "Memory Update",
-      description:
-        "Update ONE existing memo by its exact eight-character metadata ID, preserving ID, creation date, note path and description. " +
-        "Default scope 'local'. Read the memo first. For facts, content replaces the fact (one line, max 300 chars); " +
-        "for notes, content replaces the full Markdown body excluding frontmatter. Blank content is rejected; identical content is a no-op. " +
-        "Actual changes return a recovery ID for memory_restore." +
-        WORKSPACE_GUIDANCE,
-      promptSnippet: "Revise one memo in place by its ID",
+      description: TOOL_COPY.memory_update.description,
+      promptSnippet: TOOL_COPY.memory_update.promptSnippet,
       parameters: Type.Object({
         id: Type.String({ pattern: "^[a-fA-F0-9]{8}$", description: "Exact memo ID from index metadata or a tool result (not a recovery ID)." }),
         content: Type.String({ description: "Replacement fact or full Markdown note body; omit frontmatter." }),
@@ -430,13 +406,9 @@ export function toolSpecs(ctx: ToolContext) {
     {
       name: "memory_read",
       label: "Memory Read",
-      description:
-        "Read memory contents. Default: one-line facts plus a derived note catalogue for scope 'both' (global + local). " +
-        "Optional query filters index entries (case-insensitive substring). Optional path reads an existing note file. " +
-        "Optional id retrieves exactly one indexed memo, including note contents. Do not combine id with query/path. " +
-        "Ambiguous IDs/paths require an explicit scope; no guessing." +
-        WORKSPACE_GUIDANCE,
-      promptSnippet: "Read memory facts, the note catalogue, or one memo by ID/path",
+      description: TOOL_COPY.memory_read.description,
+      promptSnippet: TOOL_COPY.memory_read.promptSnippet,
+      promptGuidelines: [...TOOL_COPY.memory_read.promptGuidelines],
       parameters: Type.Object({
         id: Type.Optional(Type.String({ pattern: "^[a-fA-F0-9]{8}$", description: "Exact memo ID; returns the index entry and linked note contents." })),
         query: Type.Optional(Type.String({ description: "Case-insensitive substring filter over catalogue lines." })),
@@ -488,10 +460,8 @@ export function toolSpecs(ctx: ToolContext) {
     {
       name: "memory_search",
       label: "Memory Search",
-      description:
-        "Search facts and note bodies with weighted lexical ranking, exact tokens, phrase/coverage boosts and matching-passage counts. Descriptions and tags weigh more; one result per note. Default scope 'both'." +
-        WORKSPACE_GUIDANCE,
-      promptSnippet: "Search memory facts and note bodies",
+      description: TOOL_COPY.memory_search.description,
+      promptSnippet: TOOL_COPY.memory_search.promptSnippet,
       parameters: Type.Object({
         query: Type.String({ description: "Search terms." }),
         scope: SCOPE_READ,
@@ -514,10 +484,8 @@ export function toolSpecs(ctx: ToolContext) {
     {
       name: "memory_forget",
       label: "Memory Forget",
-      description:
-        "Delete facts or notes whose description, path or metadata contains the given text (case-insensitive); note bodies are not matched. Removes note files with recoverable snapshots. Returns a recovery ID for memory_restore. Default scope 'local'." +
-        WORKSPACE_GUIDANCE,
-      promptSnippet: "Forget facts or notes matching a string (recoverable)",
+      description: TOOL_COPY.memory_forget.description,
+      promptSnippet: TOOL_COPY.memory_forget.promptSnippet,
       parameters: Type.Object({
         text: Type.String({ description: "Text that identifies entries to delete." }),
         scope: SCOPE_WRITE,
@@ -538,10 +506,8 @@ export function toolSpecs(ctx: ToolContext) {
     {
       name: "memory_restore",
       label: "Memory Restore",
-      description:
-        "Restore entries deleted by memory_forget or undo a memory_update using its recovery ID. Refuses to overwrite later edits; conflicts retain the recovery record. Default scope 'both'; use the same root as the original change." +
-        WORKSPACE_GUIDANCE,
-      promptSnippet: "Undo a forget or update with its recovery ID",
+      description: TOOL_COPY.memory_restore.description,
+      promptSnippet: TOOL_COPY.memory_restore.promptSnippet,
       parameters: Type.Object({
         recoveryId: Type.String({ description: "Recovery id returned by memory_forget or memory_update." }),
         scope: SCOPE_READ,
@@ -569,9 +535,8 @@ export function toolSpecs(ctx: ToolContext) {
     {
       name: "memory_status",
       label: "Memory Status",
-      description:
-        "Show memory file locations, sizes, entry counts, and current session's injected snapshot size. Optional root selects another existing workspace. Works before memory_init and never creates files.",
-      promptSnippet: "Show memory store locations, counts, and snapshot size",
+      description: TOOL_COPY.memory_status.description,
+      promptSnippet: TOOL_COPY.memory_status.promptSnippet,
       parameters: Type.Object({ root: ROOT_PARAMETER }),
       async execute(args: { root?: string }, exec: ToolExec): Promise<ToolResult> {
         const target = targetStores(args.root, ["local"], exec);
@@ -582,11 +547,8 @@ export function toolSpecs(ctx: ToolContext) {
     {
       name: "memory_migrate",
       label: "Memory Migrate",
-      description:
-        "Migrate a legacy plain-file memory store into this workspace's shared store. Detects a pi-remember v1 store at <workspace>/.pi/memory (or an in-place copy missing only the marker). " +
-        "Copies current facts and notes only; recovery records, migration backups and other history are left behind. " +
-        "Never overwrites an initialized target. Use dryRun first when unsure, and ask the user before migrating.",
-      promptSnippet: "Migrate a legacy pi-remember store into this workspace",
+      description: TOOL_COPY.memory_migrate.description,
+      promptSnippet: TOOL_COPY.memory_migrate.promptSnippet,
       parameters: Type.Object({
         source: Type.Optional(Type.String({ description: "Legacy store directory. Defaults to <workspace>/.pi/memory." })),
         target: Type.Optional(Type.String({ description: `Destination store directory. Defaults to <workspace>/${ctx.config.dirName}/memory.` })),

@@ -39,9 +39,9 @@ const call = (name, args) => tools.get(name).execute(args, exec);
 check("ten tools", tools.size === 10, [...tools.keys()].join(","));
 check("/memory command registered", commands.has("memory"));
 
-// uninitialized local read fails with guidance
+// an uninitialized local store reads as empty, and the first write creates it
 const uninit = await call("memory_read", { scope: "local" });
-check("uninitialized local rejected", /not initialized/.test(uninit.text), uninit.text.slice(0, 80));
+check("uninitialized local reads as empty", !uninit.isError && /\(missing\)|empty/.test(uninit.text), uninit.text.slice(0, 80));
 
 const init = await call("memory_init", {});
 check("init creates store", /Initialized local memory/.test(init.text), init.text);

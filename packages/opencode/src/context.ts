@@ -23,6 +23,12 @@ export interface RememberConfig {
   injectCharsNested: number;
   /** Budget of one `<system_reminder>` block that carries a later change. */
   deltaChars: number;
+  /**
+   * Create the project store on the first write instead of requiring
+   * `memory_init` first. Most workspaces have no store, and a write that fails
+   * there teaches the model not to try again.
+   */
+  autoInit: boolean;
 }
 
 /** OpenCode's per-user data directory; XDG overrides follow the host's own rule. */
@@ -65,6 +71,7 @@ export function loadConfig(options: Record<string, unknown> = {}, env: NodeJS.Pr
     nestedDepth: Math.min(8, intOption(options, "nestedDepth", 2)),
     injectCharsNested: intOption(options, "injectCharsNested", 600),
     deltaChars: intOption(options, "deltaChars", 900),
+    autoInit: options.autoInit === undefined ? true : options.autoInit !== false,
   };
 }
 

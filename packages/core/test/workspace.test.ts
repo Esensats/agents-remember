@@ -5,7 +5,7 @@ import { homedir, tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { test, type TestContext } from "node:test";
 import { readMemoryText, resolveStores, type Scope, type StorePaths } from "../src/store.ts";
-import { initializationError, initializeMemory, resolveWorkspaceStores, workspaceAccessError } from "../src/workspace.ts";
+import { initializationError, initializeMemory, prepareWriteTarget, resolveWorkspaceStores, workspaceAccessError } from "../src/workspace.ts";
 
 async function fixture(t: TestContext) {
   const root = await mkdtemp(join(tmpdir(), "pi-remember-workspace-"));
@@ -408,4 +408,28 @@ test("workspace: global initialization needs no local index and creates no ancil
   assert.ok(initializationError(stores, ["global", "local"]));
   await assertOnlyIndex(stores.global);
   await assertAbsent(local.dir);
+});
+
+test("write target: auto-init creates the project store once, then reports no error", async (t) => {
+  const { stores, local } = await fixture(t);
+  assert.ok(await prepareWriteTarget(stores, "local", { autoInit: true }) === null);
+  assert.equal(await readMemoryText(local), "", "the index is created empty");
+  // Only the index is created here; the adapter marks the store in its own queue.
+  assert.deepEqual(await readdir(local.dir), ["MEMORY.md"]);
+  // A second call is a no-op, so a write never fails on an existing store.
+  assert.equal(await prepareWriteTarget(stores, "local", { autoInit: true }), null);
+});
+
+test("write target: without auto-init the uninitialized store stays an error", async (t) => {
+  const { stores, local } = await fixture(t);
+  const error = await prepareWriteTarget(stores, "local");
+  assert.ok(error);
+  assert.match(error, /Local memory is not initialized/);
+  await assert.rejects(lstat(local.dir), { code: "ENOENT" });
+});
+
+test("write target: global memory is never initialized for a write", async (t) => {
+  const { stores, globalDir } = await fixture(t);
+  assert.equal(await prepareWriteTarget(stores, "global", { autoInit: true }), null);
+  await assert.rejects(lstat(globalDir), { code: "ENOENT" });
 });

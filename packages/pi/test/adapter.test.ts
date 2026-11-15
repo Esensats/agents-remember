@@ -305,9 +305,11 @@ describe("memory lifecycle", () => {
   test("init, facts, notes, reads, updates, forget, restore, status", async (t) => {
     const f = await fixture(t);
 
+    // Reading a workspace that has no store is not an error: it reads as
+    // empty, so global memory stays reachable and a first search still works.
     const uninitialized = await f.call("memory_read", { scope: "local" });
-    assert.equal(uninitialized.isError, true);
-    assert.match(textOf(uninitialized), /not initialized/);
+    assert.notEqual(uninitialized.isError, true, textOf(uninitialized));
+    assert.match(textOf(uninitialized), /\(missing\)|empty/);
 
     const init = await f.call("memory_init", {});
     assert.match(success(init), new RegExp(`Initialized local memory: ${memoryFile(f.cwd).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
@@ -404,7 +406,8 @@ describe("memory lifecycle", () => {
 describe("prompt injection", () => {
   test("injects the snapshot as a section without a nested tag, stable between runs", async (t) => {
     const f = await fixture(t);
-    assert.deepEqual(await f.prompt(), {}, "nothing to inject before memory exists");
+    const empty = await f.prompt();
+    assert.match(empty.remember ?? "", /This project has no memory yet/, "an empty workspace still learns that memory exists");
 
     await f.start();
     await f.call("memory_init", {});
@@ -485,13 +488,81 @@ describe("prompt injection", () => {
     const section = (await f.prompt()).remember ?? "";
     assert.match(section, /## Nested workspace memory/);
     assert.match(section, /- repos\/petri — 1 fact, 1 note/);
-    assert.match(section, /Pass one of these directories as root to a memory tool/);
+    assert.match(section, /read its bank with memory_read\(\{root: "<path>"\}\)/);
     assert.doesNotMatch(section, /fixed seed/, "a child's facts stay out of the parent snapshot");
 
     const status = success(await f.call("memory_status", {}));
     assert.match(status, /nested: 1 bank\(s\) below/);
     assert.match(status, /repos\/petri — 1 fact, 1 note/);
     assert.match(status, /nested \d+\)/);
+  });
+
+  test("touching a nested workspace announces its bank once, until it is read", async (t) => {
+    const f = await fixture(t, {
+      before: async ({ cwd }) => {
+        await mkdir(join(cwd, "repos", "petri", ".agents", "memory"), { recursive: true });
+        await writeFile(join(cwd, "repos", "petri", ".agents", "memory", "remember.json"), '{\n  "version": 1\n}\n');
+        await writeFile(
+          join(cwd, "repos", "petri", ".agents", "memory", "MEMORY.md"),
+          "<!-- 2026-11-01T10:00Z [abcdabcd] -->\nThe petri dish uses a fixed seed.\n",
+        );
+      },
+    });
+    await f.start();
+    await f.call("memory_write", { content: "The parent keeps its own facts." });
+    await f.prompt();
+    assert.doesNotMatch(await f.reminder(), /nested workspace/, "a listing is not a reason to interrupt");
+
+    const toolCall = f.events.get("tool_call")!;
+    await toolCall(
+      { type: "tool_call", toolCallId: "call-1", toolName: "read", input: { path: join(f.cwd, "repos", "petri", "src", "index.ts") } },
+      f.ctx,
+    );
+    const notice = await f.reminder();
+    assert.match(notice, /repos\/petri is a nested workspace/);
+    assert.match(notice, /1 fact, 0 notes/);
+    assert.match(notice, /memory_read\(\{root: "repos\/petri"\}\)/);
+    assert.equal(await f.reminder(), notice, "the notice is stable while it applies");
+
+    // The host fires `tool_call` before every model-issued call; the fake one
+    // does not, so dispatch it the way Pi does.
+    await toolCall(
+      { type: "tool_call", toolCallId: "call-2", toolName: "memory_read", input: { root: "repos/petri" } },
+      f.ctx,
+    );
+    await f.call("memory_read", { root: "repos/petri" });
+    assert.doesNotMatch(await f.reminder(), /is a nested workspace/, "reading the bank retires the notice");
+  });
+
+  test("the first write creates the project store", async (t) => {
+    const f = await fixture(t);
+    await f.start();
+    assert.equal(existsSync(memoryFile(f.cwd)), false, "nothing exists before the write");
+
+    const saved = await f.call("memory_write", { content: "Auto-created store fact." });
+    assert.match(success(saved), /Saved to local memory/);
+    assert.match(await readFile(memoryFile(f.cwd), "utf8"), /Auto-created store fact\./);
+    assert.equal(existsSync(join(memoryDir(f.cwd), "remember.json")), true, "the new store is marked");
+  });
+
+  test("REMEMBER_AUTO_INIT=0 keeps an uninitialized store an error", async (t) => {
+    const f = await fixture(t, { env: { REMEMBER_AUTO_INIT: "0" } });
+    await f.start();
+    failure(await f.call("memory_write", { content: "nope" }), /not initialized/);
+    assert.equal(existsSync(memoryFile(f.cwd)), false);
+  });
+
+  test("reads work before the project store exists", async (t) => {
+    const f = await fixture(t);
+    await f.start();
+    assert.match(success(await f.call("memory_write", { scope: "global", content: "Machine-wide fact." })), /Saved to global memory/);
+
+    const both = await f.call("memory_read", {});
+    assert.notEqual(both.isError, true, textOf(both));
+    assert.match(textOf(both), /Machine-wide fact/);
+    assert.match(textOf(both), /\(missing\)/);
+
+    assert.match(success(await f.call("memory_search", { query: "Machine" })), /Machine-wide fact/);
   });
 
   test("nested discovery can be turned off", async (t) => {
@@ -550,9 +621,9 @@ describe("legacy stores", () => {
 
     await f.start();
     // The notice is not memory: it rides at the end with the change block, so
-    // the section stays empty until the store itself has content.
+    // the section carries only the empty-store cue until the store is migrated.
     const first = await f.prompt();
-    assert.equal(first.remember, undefined);
+    assert.match(first.remember ?? "", /This project has no memory yet/);
     const notice = await f.reminder();
     assert.match(notice, /<remember-migration>/);
     assert.match(notice, /\.pi\/memory/);

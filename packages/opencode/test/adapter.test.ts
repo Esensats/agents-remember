@@ -26,6 +26,7 @@ const adapterUrl = packageRoot
   ? pathToFileURL(join(packageRoot, "node_modules/@seangle/opencode-remember/dist/index.js")).href
   : new URL("../src/index.ts", import.meta.url).href;
 const adapter = (await import(adapterUrl)).default;
+const { EMPTY_SNAPSHOT_TEXT } = await import(packageRoot ? "@seangle/remember-core" : coreSource);
 
 interface JsonSchema {
   type?: string;
@@ -197,20 +198,43 @@ describe("tool registration", () => {
 });
 
 describe("facts", () => {
-  test("writes a fact, marks the store, and reports a memo ID", async () => {
+  test("the first write creates the store, marks it, and reports a memo ID", async () => {
     const root = await workspace();
     const host = fakeHost(root);
+    await adapter.setup(host.ctx);
+
+    assert.equal(existsSync(memoryFile(root)), false, "nothing exists before the write");
+    const result = await host.call("memory_write", { content: "Prefers tabs over spaces." });
+    assert.match(success(result), /Saved to local memory/);
+    memoId(result);
+    assert.match(await readFile(memoryFile(root), "utf8"), /Prefers tabs over spaces\./);
+    assert.match(await readFile(join(memoryDir(root), "remember.json"), "utf8"), /"version": 1/);
+  });
+
+  test("autoInit: false keeps an uninitialized store an error", async () => {
+    const root = await workspace();
+    const host = fakeHost(root, { autoInit: false });
     await adapter.setup(host.ctx);
 
     failure(await host.call("memory_write", { content: "before init" }), /not initialized/);
     assert.equal(existsSync(memoryFile(root)), false);
 
     success(await host.call("memory_init"));
-    const result = await host.call("memory_write", { content: "Prefers tabs over spaces." });
-    assert.match(success(result), /Saved to local memory/);
-    memoId(result);
-    assert.match(await readFile(memoryFile(root), "utf8"), /Prefers tabs over spaces\./);
-    assert.match(await readFile(join(memoryDir(root), "remember.json"), "utf8"), /"version": 1/);
+    assert.match(success(await host.call("memory_write", { content: "after init" })), /Saved to local memory/);
+  });
+
+  test("reads work before the project store exists", async () => {
+    const root = await workspace();
+    const host = fakeHost(root, { globalDir: join(root, "global-memory") });
+    await adapter.setup(host.ctx);
+
+    success(await host.call("memory_write", { scope: "global", content: "Machine-wide fact." }));
+
+    const both = success(await host.call("memory_read", {}));
+    assert.match(both, /Machine-wide fact/);
+    assert.match(both, /\(missing\)/);
+    assert.match(success(await host.call("memory_search", { query: "Machine" })), /Machine-wide fact/);
+    assert.equal(existsSync(memoryFile(root)), false, "reading creates nothing");
   });
 
   test("rejects duplicate and oversized facts", async () => {
@@ -373,10 +397,19 @@ describe("injection", () => {
     assert.match(success(await host.call("memory_status", {})), /nested: 1 bank\(s\) below/);
   });
 
-  test("injects nothing before local memory is initialized", async () => {
+  test("injects an empty-store cue before local memory is initialized", async () => {
     const root = await workspace();
     const host = fakeHost(root);
     await adapter.setup(host.ctx);
+    const [system] = await host.inject();
+    assert.equal(system.text, EMPTY_SNAPSHOT_TEXT);
+  });
+
+  test("an initialized but empty store gets no cue", async () => {
+    const root = await workspace();
+    const host = fakeHost(root);
+    await adapter.setup(host.ctx);
+    await host.call("memory_init");
     assert.deepEqual(await host.inject(), []);
   });
 
@@ -401,7 +434,8 @@ describe("injection", () => {
     const first = await host.inject();
     assert.equal(first.length, 1);
     assert.match(first[0].text, /<remember-migration>/);
-    assert.deepEqual(await host.inject(), []);
+    // The notice is offered once; the empty-store cue may still follow it.
+    for (const later of await host.inject()) assert.doesNotMatch(later.text, /<remember-migration>/);
 
     const otherSession = await host.inject("ses_other");
     assert.equal(otherSession.length, 0, "unknown sessions fail closed");

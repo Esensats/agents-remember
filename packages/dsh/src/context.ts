@@ -20,6 +20,12 @@ export interface RememberConfig {
   injectCharsNested: number;
   /** Budget of one `<system_reminder>` block that carries a later change. */
   deltaChars: number;
+  /**
+   * Create the project store on the first write instead of requiring
+   * `memory_init` first. Most workspaces have no store, and a write that fails
+   * there teaches the model not to try again.
+   */
+  autoInit: boolean;
 }
 
 /** Expand `~` without importing the host's shell helpers. */

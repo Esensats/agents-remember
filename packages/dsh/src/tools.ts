@@ -13,15 +13,21 @@ import {
   forgetEntries,
   initializeMemory,
   parseEntries,
+  prepareWriteTarget,
   readCatalogue,
   readCatalogueWithEntries,
   readMemo,
   resolveNotePath,
   restoreEntry,
+  ROOT_PARAMETER_TEXT,
+  SCOPE_READ_TEXT,
+  SCOPE_WRITE_TEXT,
   searchStores,
   statMemory,
+  TOOL_COPY,
   updateMemo,
   validNoteSlug,
+  workspaceAccessError,
   writeNote,
   type MemoryEntry,
   type NestedScan,
@@ -63,23 +69,20 @@ export const TEXT_OUTPUT = {
 
 const ROOT_PARAMETER = {
   type: "string",
-  description: "Workspace directory for local memory (not its .agents directory). Defaults to the session working directory; accepts absolute, relative, and ~/ paths. Ignored for global-only operations.",
+  description: ROOT_PARAMETER_TEXT,
 };
 
 const SCOPE_WRITE = {
   type: "string",
   enum: ["local", "global"],
-  description: "local = this workspace; global = user/machine facts. Defaults to local.",
+  description: SCOPE_WRITE_TEXT,
 };
 
 const SCOPE_READ = {
   type: "string",
   enum: ["local", "global", "both"],
-  description: "Which stores to read. Defaults to both.",
+  description: SCOPE_READ_TEXT,
 };
-
-const WORKSPACE_GUIDANCE =
-  " Optional root selects another workspace's local memory; global memory is unchanged. Local memory requires memory_init first.";
 
 function expandHome(input: string): string {
   if (input === "~") return process.env.HOME ?? "~";
@@ -170,11 +173,12 @@ export async function statusText(stores: Record<Scope, StorePaths>, config: Reme
     const stat = await statMemory(stores[scope]);
     lines.push(stat.exists
       ? `${scope}: ${stat.path} — ${stat.entries} facts, ${stat.notesCount} notes, ${stat.bytes} bytes, ${stat.recoveryCount} recovery file(s)`
-      : `${scope}: ${stat.path} — no memory yet${scope === "local" ? "; run memory_init first" : ""}`);
+      : `${scope}: ${stat.path} — no memory yet${scope === "local" ? (config.autoInit ? "; the first write creates it" : "; run memory_init first") : ""}`);
   }
   const snapshot = await snapshotFor(stores, config, basename(cwd), cwd);
   lines.push(`injected snapshot (current session: ${cwd}): ${snapshot.text.length} chars (global ${snapshot.globalChars}, local ${snapshot.localChars}, nested ${snapshot.nestedChars})`);
   lines.push(`the session keeps its first snapshot and receives later changes as <system_reminder> messages, ${config.deltaChars} chars each at most`);
+  lines.push(`config: dirName=${config.dirName}, autoInject=${config.autoInject ? "on" : "off"}, autoInit=${config.autoInit ? "on" : "off"}, snapshot budgets global/local ${config.injectCharsGlobal}/${config.injectCharsLocal}`);
   const scan = config.nested ? await nestedFor(cwd, config) : undefined;
   if (config.nested) {
     lines.push(`nested: ${scan?.stores.length ?? 0} bank(s) below ${cwd}, ${scan?.visited ?? 0} directory/ies scanned in ${scan?.ms ?? 0} ms` +
@@ -257,15 +261,6 @@ export function toolSpecs(ctx: ToolContext) {
     return { stores: storesFor(cwd, ctx.config), cwd };
   };
 
-  /** Local reads and mutations require an initialized MEMORY.md, as in pi-remember. */
-  const initializeCheck = (stores: Record<Scope, StorePaths>, scopes: Scope[]): string | null => {
-    if (!scopes.includes("local")) return null;
-    const store = stores.local;
-    const root = store.dir.replace(/[\\/]\.agents[\\/]memory$/, "");
-    const guidance = `Local memory is not initialized at ${JSON.stringify(store.memoryFile)}. Run memory_init({root:${JSON.stringify(root)}}).`;
-    return existsSync(store.memoryFile) ? null : guidance;
-  };
-
   /** Validate after acquiring the queue, migrate, then run the mutation. */
   const mutate = async <T>(
     stores: Record<Scope, StorePaths>,
@@ -274,7 +269,9 @@ export function toolSpecs(ctx: ToolContext) {
     requireInit = true,
   ): Promise<{ status: "ok"; value: T } | { status: "error"; message: string }> => {
     return queue(stores[scope].memoryFile, async () => {
-      const error = requireInit ? initializeCheck(stores, [scope]) : null;
+      const error = requireInit
+        ? await prepareWriteTarget(stores, scope, { autoInit: ctx.config.autoInit })
+        : workspaceAccessError(stores, [scope], false);
       if (error) return { status: "error" as const, message: error };
       try {
         // Mark a brand-new store before the first write, otherwise the
@@ -289,10 +286,12 @@ export function toolSpecs(ctx: ToolContext) {
     });
   };
 
-  /** Reads of other workspaces validate and migrate lazily; missing stores stay missing. */
+  /** Reads validate lazily; a store that does not exist yet reads as empty, not as an error. */
   const prepareReads = async (stores: Record<Scope, StorePaths>, scopes: Scope[]): Promise<string | null> => {
     for (const scope of scopes) {
-      const error = initializeCheck(stores, [scope]);
+      // Read access only needs a sound workspace root: an uninitialized project
+      // store must not hide global memory or block a first search.
+      const error = workspaceAccessError(stores, [scope], false);
       if (error) return error;
       try {
         await queue(stores[scope].memoryFile, () => assertCurrentStoreVersion(stores[scope]));
@@ -321,8 +320,7 @@ export function toolSpecs(ctx: ToolContext) {
   return [
     {
       name: "memory_init",
-      description:
-        "Explicitly initialize local memory in an existing workspace. Optional root defaults to the session working directory. Creates <workspace>/.agents/memory/MEMORY.md only if missing; never overwrites existing memory or creates the workspace itself. Global memory needs no initialization.",
+      description: TOOL_COPY.memory_init.description,
       parameters: { root: ROOT_PARAMETER },
       async execute(args: { root?: string }, exec: ToolExec) {
         const { stores } = await targetStores(args.root, ["local"], exec);
@@ -340,13 +338,7 @@ export function toolSpecs(ctx: ToolContext) {
     },
     {
       name: "memory_write",
-      description:
-        "Append exactly ONE concise, durable fact to memory. Default scope 'local' (this workspace, .agents/memory/MEMORY.md). " +
-        "Use scope 'global' ONLY for machine/user-wide facts (identity, OS, global tool preferences). " +
-        "Store only knowledge that was expensive to obtain and will plausibly matter in a FUTURE session: stable preferences, decisions, lessons, environment quirks. " +
-        "NEVER store temporary session state: current task, todos, in-progress work, debugging state, 'user asked me to X'. " +
-        "One line only, max 300 chars. For longer content use memory_store, which writes a standalone note." +
-        WORKSPACE_GUIDANCE,
+      description: TOOL_COPY.memory_write.description,
       parameters: {
         content: { type: "string", required: true, description: "Single fact to remember (one line, max 300 chars)." },
         scope: SCOPE_WRITE,
@@ -372,12 +364,7 @@ export function toolSpecs(ctx: ToolContext) {
     },
     {
       name: "memory_store",
-      description:
-        "Store detailed knowledge as a standalone Markdown note with description, ID and timestamps in frontmatter. " +
-        "Only note descriptions/IDs/paths enter context; bodies are read on demand via memory_read. " +
-        "Filenames always prepend the UTC date; no Markdown heading is added. Default scope 'local'. " +
-        "Existing/duplicate entries are returned without creating or overwriting a note; use memory_update to revise an indexed memo." +
-        WORKSPACE_GUIDANCE,
+      description: TOOL_COPY.memory_store.description,
       parameters: {
         title: { type: "string", required: true, description: "Short note description stored in frontmatter and injected into context (max 300 chars). Not a heading." },
         content: { type: "string", required: true, description: "Markdown body only; no frontmatter. Include your own heading if useful." },
@@ -407,12 +394,7 @@ export function toolSpecs(ctx: ToolContext) {
     },
     {
       name: "memory_update",
-      description:
-        "Update ONE existing memo by its exact eight-character metadata ID, preserving ID, creation date, note path and description. " +
-        "Default scope 'local'. Read the memo first. For facts, content replaces the fact (one line, max 300 chars); " +
-        "for notes, content replaces the full Markdown body excluding frontmatter. Blank content is rejected; identical content is a no-op. " +
-        "Actual changes return a recovery ID for memory_restore." +
-        WORKSPACE_GUIDANCE,
+      description: TOOL_COPY.memory_update.description,
       parameters: {
         id: { type: "string", required: true, description: "Exact memo ID from index metadata or a tool result (not a recovery ID)." },
         content: { type: "string", required: true, description: "Replacement fact or full Markdown note body; omit frontmatter." },
@@ -436,12 +418,7 @@ export function toolSpecs(ctx: ToolContext) {
     },
     {
       name: "memory_read",
-      description:
-        "Read memory contents. Default: one-line facts plus a derived note catalogue for scope 'both' (global + local). " +
-        "Optional query filters index entries (case-insensitive substring). Optional path reads an existing note file. " +
-        "Optional id retrieves exactly one indexed memo, including note contents. Do not combine id with query/path. " +
-        "Ambiguous IDs/paths require an explicit scope; no guessing." +
-        WORKSPACE_GUIDANCE,
+      description: TOOL_COPY.memory_read.description,
       parameters: {
         id: { type: "string", description: "Exact memo ID; returns the index entry and linked note contents." },
         query: { type: "string", description: "Case-insensitive substring filter over catalogue lines." },
@@ -491,9 +468,7 @@ export function toolSpecs(ctx: ToolContext) {
     },
     {
       name: "memory_search",
-      description:
-        "Search facts and note bodies with weighted lexical ranking, exact tokens, phrase/coverage boosts and matching-passage counts. Descriptions and tags weigh more; one result per note. Default scope 'both'." +
-        WORKSPACE_GUIDANCE,
+      description: TOOL_COPY.memory_search.description,
       parameters: {
         query: { type: "string", required: true, description: "Search terms." },
         scope: SCOPE_READ,
@@ -514,9 +489,7 @@ export function toolSpecs(ctx: ToolContext) {
     },
     {
       name: "memory_forget",
-      description:
-        "Delete facts or notes whose description, path or metadata contains the given text (case-insensitive); note bodies are not matched. Removes note files with recoverable snapshots. Returns a recovery ID for memory_restore. Default scope 'local'." +
-        WORKSPACE_GUIDANCE,
+      description: TOOL_COPY.memory_forget.description,
       parameters: {
         text: { type: "string", required: true, description: "Text that identifies entries to delete." },
         scope: SCOPE_WRITE,
@@ -535,9 +508,7 @@ export function toolSpecs(ctx: ToolContext) {
     },
     {
       name: "memory_restore",
-      description:
-        "Restore entries deleted by memory_forget or undo a memory_update using its recovery ID. Refuses to overwrite later edits; conflicts retain the recovery record. Default scope 'both'; use the same root as the original change." +
-        WORKSPACE_GUIDANCE,
+      description: TOOL_COPY.memory_restore.description,
       parameters: {
         recoveryId: { type: "string", required: true, description: "Recovery id returned by memory_forget or memory_update." },
         scope: SCOPE_READ,
@@ -551,7 +522,7 @@ export function toolSpecs(ctx: ToolContext) {
           args.recoveryId,
           queue,
           scopes,
-          (store) => initializeCheck(stores, [store.scope]),
+          (store) => workspaceAccessError(stores, [store.scope]),
           ensureStoreVersion,
         );
         if (!result) return { text: `No recovery record found for id ${args.recoveryId}.` };
@@ -563,8 +534,7 @@ export function toolSpecs(ctx: ToolContext) {
     },
     {
       name: "memory_status",
-      description:
-        "Show memory file locations, sizes, entry counts, and current session's injected snapshot size. Optional root selects another existing workspace. Works before memory_init and never creates files.",
+      description: TOOL_COPY.memory_status.description,
       parameters: { root: ROOT_PARAMETER },
       async execute(args: { root?: string }, exec: ToolExec) {
         const { stores, cwd } = await targetStores(args.root, ["local"], exec);
@@ -573,10 +543,7 @@ export function toolSpecs(ctx: ToolContext) {
     },
     {
       name: "memory_migrate",
-      description:
-        "Migrate a legacy plain-file memory store into this workspace's .agents/memory. Detects a pi-remember v1 store at <workspace>/.pi/memory (or an in-place copy missing only the marker). " +
-        "Copies current facts and notes only; recovery records, migration backups and other history are left behind. " +
-        "Never overwrites an initialized target. Use dryRun first when unsure, and ask the user before migrating.",
+      description: TOOL_COPY.memory_migrate.description,
       parameters: {
         source: { type: "string", description: "Legacy store directory. Defaults to <workspace>/.pi/memory." },
         target: { type: "string", description: "Destination store directory. Defaults to <workspace>/.agents/memory." },

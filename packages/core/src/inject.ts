@@ -1,4 +1,5 @@
 import { formatNestedStores, type NestedScan } from "./discover.ts";
+import { SNAPSHOT_INTRO } from "./text.ts";
 
 export interface InjectOptions {
   maxGlobalChars: number;
@@ -21,10 +22,7 @@ export interface InjectOptions {
 
 const DEFAULT_TAG = "remember";
 const DEFAULT_NESTED_CHARS = 600;
-const DEFAULT_INTRO =
-  "Persistent memory: one-line facts plus a note catalogue derived from frontmatter (description, ID, dates, path). " +
-  "Note bodies are NOT included; read them by ID or path when needed. Global = user/machine facts; Project = this workspace. " +
-  "This snapshot is stable between turns and refreshes only when the store changes.";
+const DEFAULT_INTRO = SNAPSHOT_INTRO;
 
 export interface Snapshot {
   text: string;

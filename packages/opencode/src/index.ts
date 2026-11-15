@@ -1,6 +1,7 @@
+import { existsSync } from "node:fs";
 import { basename } from "node:path";
 import type { Context } from "@opencode/plugin";
-import { SnapshotLedger, ensureStoreVersion, readStoreVersion } from "@seangle/remember-core";
+import { EMPTY_SNAPSHOT_TEXT, SnapshotLedger, ensureStoreVersion, readStoreVersion } from "@seangle/remember-core";
 import { migrate } from "@seangle/remember-migrators";
 import { loadConfig, storesFor, type RememberConfig } from "./context.ts";
 import {
@@ -168,7 +169,13 @@ export default {
         }
 
         const notice = await migrationNotice(event.sessionID, cwd, config);
-        const text = [notice, frozen ?? ""].filter((part) => part.trim().length > 0).join("\n\n");
+        // A workspace with no store at all still needs a cue: otherwise the only
+        // sign that memory exists is a tool schema, and a fresh workspace is
+        // exactly where a first fact would be worth writing. An unreadable
+        // store is not empty, so it never gets this line.
+        const storeAbsent = !existsSync(stores.local.memoryFile);
+        const frozenOrCue = frozen ?? (live === "" && storeAbsent ? EMPTY_SNAPSHOT_TEXT : "");
+        const text = [notice, frozenOrCue].filter((part) => part.trim().length > 0).join("\n\n");
         if (!text) return;
         event.system.push({ type: "text", text });
       } catch {

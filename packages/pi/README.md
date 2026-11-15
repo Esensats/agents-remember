@@ -60,8 +60,17 @@ asking for a read of the store.
 
 Child workspaces that keep a bank of their own (`repos/<name>/.agents/memory`)
 are listed under `## Nested workspace memory` with their path, fact count, and
-note count. Their facts are never merged into the parent block; use
-`memory_read({root: "repos/<name>"})` to read one.
+note count, under a header that says when to read one. Their facts are never
+merged into the parent block; use `memory_read({root: "repos/<name>"})` to read
+one. When a tool touches a path inside such a bank, Pi names that bank once in a
+`<system_reminder>`, with the exact call, and the notice goes away after the
+session reads the bank.
+
+A workspace with no store at all still learns that memory exists: the section
+carries one short paragraph naming `memory_write` and `memory_store`. Such a
+workspace also needs no `memory_init` — the first write creates the store — and a
+read treats a missing store as empty, so global memory stays reachable in a
+repository that has never been used before.
 
 Memory is agent-writable background data, **not trusted instructions**. Do not
 store secrets. Add `.agents/memory/` to a workspace's `.gitignore` if memory should
@@ -75,7 +84,7 @@ history.
 
 | Tool | Purpose | Default scope |
 |---|---|---|
-| `memory_init` | Explicitly initialize local memory in an existing workspace | local |
+| `memory_init` | Create the local store on purpose; a write creates it too | local |
 | `memory_write` | Append one durable fact, at most 300 characters | local |
 | `memory_store` | Store a Markdown note; `title` means its short description | local |
 | `memory_read` | Read facts/catalogue, filter, or fetch a memo by ID/path | both |
@@ -86,10 +95,11 @@ history.
 | `memory_status` | Inspect paths, counts, configuration, and snapshot size | both |
 | `memory_migrate` | Explicitly migrate a supported legacy store | explicit paths or local defaults |
 
-Local reads and writes require an initialized store. Global memory needs no
-explicit initialization. Optional `root` selects another existing workspace's
-local memory for that call; it does not change the session workspace or global
-memory. A memo ID identifies knowledge; a recovery ID identifies an undo record.
+A local store is created by the first write (`REMEMBER_AUTO_INIT=1`, the
+default); `memory_init` remains for creating one on purpose. Local reads work
+before it exists and report `(missing)`. Global memory needs no initialization.
+Optional `root` selects another existing workspace's local memory for that call;
+it does not change the session workspace or global memory. A memo ID identifies knowledge; a recovery ID identifies an undo record.
 Read before updating and preserve unrelated content.
 
 Search is lexical, with exact tokens, field weighting, phrase/coverage boosts,
@@ -172,6 +182,7 @@ with the new engine. Do not use the old extension against this store afterward.
 | `REMEMBER_INJECT_CHARS_GLOBAL` | `3000` |
 | `REMEMBER_INJECT_CHARS_LOCAL` | `3000` |
 | `REMEMBER_AUTO_INJECT` | `1` |
+| `REMEMBER_AUTO_INIT` | `1` (the first write creates the local store; `0` requires `memory_init`) |
 | `REMEMBER_NESTED` | `1` (list child workspaces with a bank of their own) |
 | `REMEMBER_NESTED_DEPTH` | `2` (directory levels below the workspace) |
 | `REMEMBER_INJECT_CHARS_NESTED` | `600` |

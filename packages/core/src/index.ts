@@ -8,6 +8,7 @@
  */
 export * from "./store.ts";
 export * from "./notes.ts";
+export * from "./text.ts";
 export * from "./search.ts";
 export * from "./inject.ts";
 export * from "./discover.ts";

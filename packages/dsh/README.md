@@ -53,7 +53,9 @@ exactly once. Compaction counts as losing the surface: when no snapshot remains
 visible, the next step — even mid-turn — injects a fresh one. Facts and a derived
 note catalogue ride in context; note bodies stay on disk until read or searched.
 Each scope has a default 3,000-character budget, with middle truncation for large
-stores.
+stores. A workspace whose project `MEMORY.md` does not exist yet receives a short
+cue instead, so a fresh workspace learns that memory is worth writing; a store
+that exists but cannot be read is not empty and never gets that cue.
 
 Memory is agent-writable background data, **not trusted instructions**. Do not
 store secrets. Add `.agents/memory/` to a workspace's `.gitignore` if memory
@@ -67,7 +69,7 @@ history.
 
 | Tool | Purpose | Default scope |
 |---|---|---|
-| `memory_init` | Explicitly initialize local memory in an existing workspace | local |
+| `memory_init` | Create an empty project store on purpose (writing does not need it) | local |
 | `memory_write` | Append one durable fact, at most 300 characters | local |
 | `memory_store` | Store a Markdown note; `title` means its short description | local |
 | `memory_read` | Read facts/catalogue, filter, or fetch a memo by ID/path | both |
@@ -78,11 +80,14 @@ history.
 | `memory_status` | Inspect paths, counts, configuration, and snapshot size | both |
 | `memory_migrate` | Explicitly migrate a supported legacy store | explicit paths or local defaults |
 
-Local reads and writes require an initialized store. Global memory needs no
-explicit initialization. Optional `root` selects another existing workspace's
-local memory for that call; it does not change the session workspace or global
-memory. A memo ID identifies knowledge; a recovery ID identifies an undo record.
-Read before updating and preserve unrelated content.
+Local writes create the project store on the first call, unless `autoInit` is
+`false`; then a write needs `memory_init` first. Reads never need it: a project
+store that does not exist yet reads as an empty section and hides global memory
+from nothing. Global memory needs no initialization either way. Optional `root`
+selects another existing workspace's local memory for that call; it does not
+change the session workspace or global memory. A memo ID identifies knowledge; a
+recovery ID identifies an undo record. Read before updating and preserve
+unrelated content.
 
 - `/memory` or `/memory status`: show status.
 - `/memory migrate`: migrate the current workspace's recognized legacy
@@ -105,9 +110,11 @@ index are involved. Tool output is bounded and truncation is reported.
 | `injectCharsGlobal` | `3000` |
 | `injectCharsLocal` | `3000` |
 | `autoInject` | `true` |
+| `autoInit` | `true` — the first local write creates the project store |
 
 Budgets must be positive numbers; invalid values fall back to the default. Set
-`autoInject: false` to disable injection, not the tools.
+`autoInject: false` to disable injection, not the tools. Set `autoInit: false` to
+require `memory_init` before the first write; reads stay available either way.
 
 ## Concurrency and safety
 

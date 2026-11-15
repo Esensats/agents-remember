@@ -1,6 +1,6 @@
 {
   "name": "@seangle/opencode-remember",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Portable plain-file memory for OpenCode: facts, notes, stable memo IDs, lexical search, and a per-request session snapshot.",
   "license": "Apache-2.0",
   "author": "Esensats",
@@ -28,8 +28,8 @@
     "LICENSE"
   ],
   "dependencies": {
-    "@seangle/remember-core": "^0.2.0",
-    "@seangle/remember-migrators": "^0.2.0"
+    "@seangle/remember-core": "^0.3.0",
+    "@seangle/remember-migrators": "^0.2.1"
   },
   "peerDependencies": {
     "@opencode/plugin": ">=2.2.0"

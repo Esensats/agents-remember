@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
 import { basename } from "node:path";
 import z from "@deepseek-ai/schemastery";
 import { defineTool } from "@deepseek-ai/dsh-tools";
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
-import { SnapshotLedger, ensureStoreVersion, readStoreVersion } from "@seangle/remember-core";
+import { EMPTY_SNAPSHOT_TEXT, SnapshotLedger, ensureStoreVersion, readStoreVersion } from "@seangle/remember-core";
 import { migrate } from "@seangle/remember-migrators";
 import { CommandDefinitionId } from "@deepseek-ai/dsh-commands/brand";
 import { SNAPSHOT_KIND, storesFor, type RememberConfig } from "./context.ts";
@@ -38,6 +39,7 @@ export const Config = z.object({
   nestedDepth: z.number().default(2),
   injectCharsNested: z.number().default(600),
   deltaChars: z.number().default(900),
+  autoInit: z.boolean().default(true),
 });
 
 /** Stable short digest of one rendered snapshot. */
@@ -184,8 +186,13 @@ export function apply(ctx: any, config: RememberConfig) {
     }
 
     // Nothing to inject yet: freeze on the first real snapshot instead, so an
-    // empty store never costs a second head change later.
-    if (live === "") return decision;
+    // empty store never costs a second head change later. A workspace with no
+    // store at all still needs a cue, otherwise the only sign that memory exists
+    // is a tool schema, and a fresh workspace is exactly where a first fact would
+    // be worth writing. An unreadable store is not empty, so it never gets it.
+    const storeAbsent = !existsSync(storesFor(cwd, config).local.memoryFile);
+    const head = live === "" && storeAbsent ? EMPTY_SNAPSHOT_TEXT : live;
+    if (head === "") return decision;
 
     // A snapshot already in the surface is the baseline; its state is captured
     // now, because only a delivered message counts as injected. Freezing before
@@ -209,7 +216,7 @@ export function apply(ctx: any, config: RememberConfig) {
       // Detection is advisory; never block injection on it.
     }
 
-    const text = [notice, live].filter((part) => part.trim().length > 0).join("\n\n");
+    const text = [notice, head].filter((part) => part.trim().length > 0).join("\n\n");
     if (!text) return decision;
 
     const digest = digestOf(text);
